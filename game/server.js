@@ -67,7 +67,7 @@ const server = http.createServer(async (req, res) => {
 server.listen(PORT, () => {
   const url = `http://localhost:${PORT}`;
   console.log('');
-  console.log('  🎮  Git 闯关练习已启动（含登录系统）');
+  console.log('  🎮  TermQuest 终端闯关练习已启动（含登录系统）');
   console.log(`  ➜  本地访问: ${url}`);
   console.log('');
   console.log('  按 Ctrl+C 停止服务');

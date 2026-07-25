@@ -1,6 +1,6 @@
 // GitHub 仓库存储 —— 未配置 Upstash Redis 时的兜底持久化
 // 用 GITHUB_DATA_TOKEN 通过 Contents API 把数据 JSON 存进私有仓库
-// （默认 KD-CHL/learngit-data）。Vercel 上直连 api.github.com，
+// （默认 KD-CHL/termquest-data）。Vercel 上直连 api.github.com，
 // 本地开发自动复用 github.js 的 CONNECT 代理隧道。
 //
 // 并发策略：Contents API 更新需携带最新 blob sha，冲突（422/409）时
@@ -9,7 +9,7 @@
 import { httpsJson } from './github.js';
 
 const OWNER = process.env.GITHUB_DATA_OWNER || 'KD-CHL';
-const REPO = process.env.GITHUB_DATA_REPO || 'learngit-data';
+const REPO = process.env.GITHUB_DATA_REPO || 'termquest-data';
 const BRANCH = 'main';
 const API_BASE = process.env.GITHUB_API_BASE || 'https://api.github.com';
 

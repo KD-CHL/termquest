@@ -1,7 +1,7 @@
 {
-  "name": "git-game",
-  "version": "2.0.0",
-  "description": "Git 闯关练习 —— 在浏览器里通过模拟终端学习 git，从提交走到变基与冲突解决",
+  "name": "termquest",
+  "version": "3.0.0",
+  "description": "TermQuest 终端闯关练习 —— 在浏览器模拟终端里闯关学习 Git、Linux、Shell 脚本与 Docker 运维命令",
   "type": "module",
   "scripts": {
     "start": "node server.js",
