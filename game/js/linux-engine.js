@@ -33,7 +33,7 @@ export class LinuxEngine {
     r['home'] = mkDir('drwxr-xr-x', 'root', 'root');
     r['home'].children['user'] = mkDir('drwxr-x---', 'user', 'user');
     r['etc'].children['passwd'] = mkFile('root:x:0:0:root:/root:/bin/bash\nuser:x:1000:1000:user:/home/user:/bin/bash\n', '-rw-r--r--', 'root', 'root');
-    r['etc'].children['hostname'] = mkFile('learngit\n', '-rw-r--r--', 'root', 'root');
+    r['etc'].children['hostname'] = mkFile('termquest\n', '-rw-r--r--', 'root', 'root');
   }
 
   _seedProcs() {

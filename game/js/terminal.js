@@ -10,7 +10,7 @@ export function esc(s) {
 export function promptText() {
   const mod = app.currentModule;
   if (mod && mod.prompt) return mod.prompt(app.engine || G);
-  return `learngit (${G.headBranch || 'detached'}) $`;
+  return `termquest (${G.headBranch || 'detached'}) $`;
 }
 
 export function printCmd(s) {

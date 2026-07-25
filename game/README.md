@@ -1,10 +1,10 @@
-# 🎮 Git 闯关练习
+# 🎮 TermQuest · 终端闯关练习
 
-在浏览器里通过**模拟终端**学习 git——敲真实的 git 命令完成 17 个关卡，右侧实时可视化分支图谱，从第一次提交一路练到变基、冲突解决与 reflog 救援。
+在浏览器里通过**模拟终端**学习命令行——敲真实命令完成 47 个关卡，覆盖 **Git、Linux、Shell 脚本、Docker 运维**四大模块，Git 模块右侧实时可视化分支图谱，从第一次提交一路练到变基、冲突解决与 reflog 救援。
 
 内置**用户登录 + 角色权限**系统：玩家进度云端保存，管理员可在后台查看所有人的闯关情况并管理角色。配套**排行榜、成就徽章、个人统计面板**，并支持 **GitHub 账号登录**。
 
-**线上体验：https://learngit-jet.vercel.app**
+**线上体验：https://termquest-chls-projects-ddde4200.vercel.app**
 
 ---
 
@@ -89,8 +89,8 @@ npm start             # 等价于 node server.js
 
 在 [GitHub Developer Settings](https://github.com/settings/developers) 创建一个 **OAuth App**：
 
-- **Homepage URL**: `http://localhost:5188`（线上填 `https://learngit-jet.vercel.app`）
-- **Authorization callback URL**: `http://localhost:5188/github-callback.html`（线上填 `https://learngit-jet.vercel.app/github-callback.html`）
+- **Homepage URL**: `http://localhost:5188`（线上填 `https://termquest-chls-projects-ddde4200.vercel.app`）
+- **Authorization callback URL**: `http://localhost:5188/github-callback.html`（线上填 `https://termquest-chls-projects-ddde4200.vercel.app/github-callback.html`）
 
 然后带上凭据启动服务器：
 
@@ -192,7 +192,7 @@ npm run test:auth     # 只跑认证 API（自动用隔离的临时数据目录�
 
 ## 云端部署（Vercel）
 
-项目已部署至 **https://learngit-jet.vercel.app**，采用**双存储模式**，同一份代码本地与云端通用：
+项目已部署至 **https://termquest-chls-projects-ddde4200.vercel.app**，采用**双存储模式**，同一份代码本地与云端通用：
 
 | 环境 | 存储 | 说明 |
 |------|------|------|
@@ -202,11 +202,11 @@ npm run test:auth     # 只跑认证 API（自动用隔离的临时数据目录�
 - `api/index.js` + `vercel.json`：rewrites 把 `/api/*` 全部汇聚到入口函数，每个请求 `hydrate() → 处理 → persist()`
 - `server/kv.js`：存储分发器，优先 Redis，其次 GitHub 仓库存储，最后本地文件
 - 部署时 Vercel 项目 **Root Directory 设为 `game/`**，自动识别 `api/` 目录
-- **GitHub ↔ Vercel 自动同步**：每次 `git push` 到 KD-CHL/learngit 自动触发部署，约 10 秒上线
+- **GitHub ↔ Vercel 自动同步**：每次 `git push` 到 KD-CHL/termquest 自动触发部署，约 10 秒上线
 
 ### 部署步骤（从零开始）
 
-1. 在 [Vercel](https://vercel.com) 新建项目 → 导入 `KD-CHL/learngit` → Root Directory 填 `game`
+1. 在 [Vercel](https://vercel.com) 新建项目 → 导入 `KD-CHL/termquest` → Root Directory 填 `game`
 2. 添加环境变量（任选其一或同时配置）：
    - **Upstash Redis**（推荐）：`UPSTASH_REDIS_REST_URL`、`UPSTASH_REDIS_REST_TOKEN`
    - **GitHub 仓库存储**（兜底）：`GITHUB_DATA_TOKEN`（需对数据仓库有 Contents 读写权限）

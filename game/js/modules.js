@@ -30,7 +30,7 @@ const gitModule = {
   render: gitRender,
   levels: LEVELS,
   offset: 0, // 在 ALL_LEVELS 中的起始索引
-  prompt(engine) { return `learngit (${engine.headBranch || 'detached'}) $`; },
+  prompt(engine) { return `termquest (${engine.headBranch || 'detached'}) $`; },
   panels: [
     { id: 'graphBox', title: '提交图谱', dot: 'var(--green)', grow: true },
     { id: 'branchList', title: '分支', dot: 'var(--blue)', maxHeight: '130px' },
@@ -80,7 +80,7 @@ const linuxModule = {
   offset: 0, // registerModule 会设置
   prompt(engine) {
     const cwd = (engine.cwd || '~').replace(engine.env?.HOME || '/home/user', '~');
-    return `user@learngit:${cwd}$`;
+    return `user@termquest:${cwd}$`;
   },
   panels: [
     { id: 'linuxTree', title: '文件树', dot: 'var(--blue)', grow: true },
@@ -117,7 +117,7 @@ const shellgitModule = {
   render: gitRender,
   levels: SHELLGIT_LEVELS,
   offset: 0, // registerModule 会设置
-  prompt(engine) { return `learngit (${engine.headBranch || 'detached'}) $`; },
+  prompt(engine) { return `termquest (${engine.headBranch || 'detached'}) $`; },
   panels: [
     { id: 'graphBox', title: '提交图谱', dot: 'var(--green)', grow: true },
     { id: 'branchList', title: '分支', dot: 'var(--blue)', maxHeight: '130px' },

@@ -18,7 +18,7 @@ function getProxy() {
 // 发起 HTTPS 请求并解析 JSON（代理为尽力而为：undici 不可用时自动直连）
 export async function httpsJson(urlStr, { method = 'GET', headers = {}, body } = {}) {
   const reqHeaders = {
-    'User-Agent': 'git-game-server',
+    'User-Agent': 'termquest-server',
     'Accept': 'application/vnd.github+json',
     ...headers,
   };

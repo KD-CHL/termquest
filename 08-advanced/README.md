@@ -89,11 +89,11 @@ git bisect reset                # 结束
 ### 练习 3：worktree 并行开发
 ```bash
 # 正在 feature 分支开发，突然要修 main 上的 bug
-git worktree add ../learngit-hotfix main
-cd ../learngit-hotfix           # 在另一个目录修 bug
+git worktree add ../termquest-hotfix main
+cd ../termquest-hotfix           # 在另一个目录修 bug
 # 修完后
-cd ../learngit
-git worktree remove ../learngit-hotfix
+cd ../termquest
+git worktree remove ../termquest-hotfix
 ```
 
 ### 练习 4：blame 追溯代码

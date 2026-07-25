@@ -1,14 +1,14 @@
-# Learn Git — 从入门到精通
+# TermQuest — 终端闯关练习
 
-一个系统化的 Git 操作练习仓库，按难度递进编排，覆盖所有核心操作。
+一个系统化的命令行练习仓库：既有按难度递进的 Git 专项练习，也有覆盖 Git / Linux / Shell / Docker 的互动闯关游戏。
 
 ---
 
 ## 🎮 互动闯关游戏
 
-**线上体验：https://learngit-jet.vercel.app**
+**线上体验：https://termquest-chls-projects-ddde4200.vercel.app**
 
-在浏览器里通过**模拟终端**学习 git——敲真实的 git 命令完成 17 个关卡，右侧实时可视化分支图谱，从第一次提交一路练到变基、冲突解决与 reflog 救援。内置用户登录、排行榜、成就徽章、个人统计面板，并支持 GitHub 账号登录。
+在浏览器里通过**模拟终端**学习命令行——敲真实命令完成 47 个关卡，覆盖 Git、Linux、Shell 脚本与 Docker 运维四大模块。内置用户登录、排行榜、成就徽章、个人统计面板，并支持 GitHub 账号登录。
 
 ### 账号说明
 

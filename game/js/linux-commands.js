@@ -518,8 +518,8 @@ const CMD = {
 
   /* ---- 系统信息 ---- */
   whoami: (a, stdin, e) => ({ out: [e.env.USER], mutated: false }),
-  hostname: (a, stdin, e) => ({ out: ['learngit'], mutated: false }),
-  uname: (a, stdin, e) => ({ out: [a.includes('-a') ? 'Linux learngit 6.1.0-learngit #1 SMP x86_64 GNU/Linux' : 'Linux'], mutated: false }),
+  hostname: (a, stdin, e) => ({ out: ['termquest'], mutated: false }),
+  uname: (a, stdin, e) => ({ out: [a.includes('-a') ? 'Linux termquest 6.1.0-termquest #1 SMP x86_64 GNU/Linux' : 'Linux'], mutated: false }),
   date: (a, stdin, e) => ({ out: ['Fri Jul 25 10:00:00 CST 2026'], mutated: false }),
   env: (a, stdin, e) => ({ out: Object.entries(e.env).map(([k, v]) => `${k}=${v}`), mutated: false }),
 
