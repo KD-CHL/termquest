@@ -5,13 +5,15 @@
 // 这样 commands 不需要知道 ui / checkLevel 的存在，避免循环依赖。
 import { G, app } from './state.js';
 import { print, printCmd, clearTerm } from './terminal.js';
-import { sfxClick, sfxOk, sfxErr } from './effects.js';
+import { sfxClick, sfxOk, sfxErr, sfx } from './effects.js';
 import { updateCmdCount } from './render.js';
 
 export function tokenize(s) {
-  const tk = []; let c = '', q = null;
+  const tk = []; let c = '', q = null, esc = false;
   for (const ch of s) {
-    if (q) { if (ch === q) q = null; else c += ch; }
+    if (esc) { c += ch; esc = false; }
+    else if (ch === '\\' && q !== "'") esc = true;
+    else if (q) { if (ch === q) q = null; else c += ch; }
     else if (ch === '"' || ch === "'") q = ch;
     else if (ch === ' ' || ch === '\t') { if (c) { tk.push(c); c = ''; } }
     else c += ch;
@@ -32,29 +34,29 @@ function track(name) {
 export function execute(input) {
   input = input.trim(); if (!input) return;
   printCmd(input);
-  if (!['help', 'clear', 'ls'].includes(input.split(' ')[0]) && !input.startsWith('cat ')) app.cmdCount++;
+  if (!app.inScript && !['help', 'clear', 'ls'].includes(input.split(' ')[0]) && !input.startsWith('cat ')) app.cmdCount++;
   updateCmdCount();
 
   const em = input.match(/^echo\s+(.*?)(>>|>)\s*(\S+)\s*$/);
   if (em) {
-    let content = em[1].trim().replace(/^["']|["']$/g, '');
+    let content = em[1].trim().replace(/^["']|["']$/g, '').replace(/\\(["\\])/g, '$1');
     const append = em[2] === '>>', f = em[3];
     G.files[f] = append ? (G.files[f] || '') + content + '\n' : content + '\n';
     track('echo');
-    print(`已${append ? '追加到' : '写入'} ${f}`, 'out'); sfxClick(); after(true); return;
+    print(`已${append ? '追加到' : '写入'} ${f}`, 'out'); sfx('file-write'); after(true); return;
   }
 
   const t = tokenize(input), cmd = t[0];
   if (cmd === 'help') { showHelp(); return; }
-  if (cmd === 'ls') { const n = Object.keys(G.files); print(n.length ? n.join('  ') : '(空)', 'out'); return; }
+  if (cmd === 'ls') { G.used.add('ls'); const n = Object.keys(G.files); print(n.length ? n.join('  ') : '(空)', 'out'); after(true); return; }
   if (cmd === 'cat') {
     if (!t[1]) return print('用法: cat <文件>', 'err');
     if (G.files[t[1]] === undefined) return print(`cat: ${t[1]}: 不存在`, 'err');
-    print(G.files[t[1]].replace(/\n$/, ''), 'out'); return;
+    print(G.files[t[1]].replace(/\n$/, ''), 'out'); after(true); return;
   }
   if (cmd === 'clear') { clearTerm(); return; }
-  if (cmd === 'rm') { if (t[1]) { delete G.files[t[1]]; delete G.index[t[1]]; print(`已删除 ${t[1]}`, 'out'); after(true); } return; }
-  if (cmd !== 'git') return print(`未识别: ${cmd}（输入 help 查看命令）`, 'err');
+  if (cmd === 'rm') { if (t[1]) { delete G.files[t[1]]; delete G.index[t[1]]; print(`已删除 ${t[1]}`, 'out'); sfx('file-delete'); after(true); } return; }
+  if (cmd !== 'git') { sfx('err-syntax'); return print(`未识别: ${cmd}（输入 help 查看命令）`, 'err'); }
 
   const sub = t[1]; G.used.add(sub); const rest = t.slice(2);
   const fn = {
@@ -63,9 +65,10 @@ export function execute(input) {
     stash: cmdStash, tag: cmdTag, show: cmdShow, 'cherry-pick': cmdCherryPick, rebase: cmdRebase,
     revert: cmdRevert, reflog: cmdReflog
   }[sub];
-  if (!fn) return print(`git ${sub}: 暂不支持`, 'err');
+  if (!fn) { sfx('err-syntax'); return print(`git ${sub}: 暂不支持`, 'err'); }
   track('git ' + sub);
   fn(rest);
+  after(true);
 }
 
 function cmdStatus() {
@@ -98,7 +101,7 @@ function cmdAdd(rest) {
         G.mergeInProgress.conflictFiles.delete(f);
     } else print(`error: pathspec '${f}' did not match`, 'err');
   }
-  if (n) print(`已暂存 ${n} 个文件`, 'out'); sfxClick(); after(true);
+  if (n) print(`已暂存 ${n} 个文件`, 'out'); sfx('file-create'); after(true);
 }
 
 function cmdCommit(rest) {
@@ -168,7 +171,7 @@ function cmdBranch(rest) {
   }
   const n = rest[0];
   if (G.branches[n] !== undefined) return print(`fatal: 分支 '${n}' 已存在`, 'err');
-  G.branches[n] = G.headCommit; print(`已创建分支 ${n}`, 'out'); after(true);
+  G.branches[n] = G.headCommit; print(`已创建分支 ${n}`, 'out'); sfx('proc-fork'); after(true);
 }
 
 function cmdSwitch(rest) {
@@ -180,7 +183,7 @@ function cmdSwitch(rest) {
   const from = G.headBranch || String(G.headCommit).slice(0, 7);
   G.HEAD = name; const tr = G.headTree(); G.files = G.snap(tr); G.index = G.snap(tr);
   G.pushReflog(G.headCommit, `checkout: moving from ${from} to ${name}`);
-  print(`Switched to branch '${name}'`, 'ok'); sfxClick(); after(true);
+  print(`Switched to branch '${name}'`, 'ok'); sfx('ui-tab'); after(true);
 }
 
 function cmdMerge(rest) {
@@ -235,7 +238,7 @@ function cmdReset(rest) {
   if (mode === '--mixed' || mode === '--hard') G.index = G.snap(tree);
   if (mode === '--hard') G.files = G.snap(tree);
   G.pushReflog(target, `reset (${mode.replace('--', '')}): moving to ${args[0] || 'HEAD'}`);
-  print(`HEAD 已移动到 ${target ? target.slice(0, 7) : '(root)'}`, 'warn'); after(true);
+  print(`HEAD 已移动到 ${target ? target.slice(0, 7) : '(root)'}`, 'warn'); sfx('file-move'); after(true);
 }
 
 function cmdRestore(rest) {
@@ -263,14 +266,14 @@ function cmdStash(rest) {
     if (!G.stash.length) return print('No stash entries found.', 'err');
     const s = G.stash[0]; G.files = G.snap(s.files); G.index = G.snap(s.index);
     if (sub === 'pop') G.stash.shift();
-    print('已恢复暂存的工作', 'ok'); after(true); return;
+    print('已恢复暂存的工作', 'ok'); sfx('ui-open'); after(true); return;
   }
   const ht = G.headTree();
   const dirty = JSON.stringify(G.files) !== JSON.stringify(ht) || JSON.stringify(G.index) !== JSON.stringify(ht);
   if (!dirty) return print('No local changes to save', 'warn');
   G.stash.unshift({ files: G.snap(G.files), index: G.snap(G.index), msg: `WIP on ${G.headBranch || 'detached'}` });
   G.files = G.snap(ht); G.index = G.snap(ht);
-  print('Saved working directory and index state', 'ok'); after(true);
+  print('Saved working directory and index state', 'ok'); sfx('ui-close'); after(true);
 }
 
 function cmdTag(rest) {

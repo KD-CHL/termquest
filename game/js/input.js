@@ -1,21 +1,19 @@
 // 输入交互 —— 命令补全 / 历史记录 / 快捷键
-import { G } from './state.js';
-import { execute } from './commands.js';
+import { G, app } from './state.js';
+import { getCurrentModule } from './modules.js';
 import { esc } from './terminal.js';
 import { toggleSheet } from './ui.js';
-
-const CMDS = ['git status', 'git add .', 'git add ', 'git commit -m ""', 'git commit --amend --no-edit', 'git log --oneline', 'git log ',
-  'git diff', 'git branch', 'git branch -d ', 'git switch ', 'git switch -c ', 'git merge ', 'git merge --abort', 'git rebase ',
-  'git cherry-pick ', 'git reset --hard HEAD~1', 'git revert ', 'git reflog', 'git restore ', 'git restore --staged ', 'git stash', 'git stash pop', 'git stash list',
-  'git tag ', 'git show', 'echo "" > ', 'ls', 'cat ', 'clear', 'help'];
 
 let input, sg;
 let sgList = [], sgIdx = -1;
 const history = []; let histIdx = -1;
 
 function buildSuggestions(v) {
-  const files = Object.keys(G.files).map(f => 'cat ' + f).concat(Object.keys(G.files));
-  const pool = [...CMDS, ...files];
+  const mod = getCurrentModule();
+  const cmds = mod.cmds || [];
+  const engine = app.engine || G;
+  const files = engine.files ? Object.keys(engine.files).map(f => 'cat ' + f).concat(Object.keys(engine.files)) : [];
+  const pool = [...cmds, ...files];
   if (!v.trim()) return [];
   return pool.filter(c => c.startsWith(v) && c !== v).slice(0, 6);
 }
@@ -50,7 +48,7 @@ export function initInput() {
     }
     if (e.key === 'Enter') {
       const v = input.value;
-      if (v.trim()) { history.unshift(v); histIdx = -1; sg.classList.remove('show'); execute(v); }
+      if (v.trim()) { history.unshift(v); histIdx = -1; sg.classList.remove('show'); getCurrentModule().execute(v); }
       input.value = ''; return;
     }
     if (e.key === 'ArrowUp') {

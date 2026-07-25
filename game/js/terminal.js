@@ -1,5 +1,5 @@
 // 终端输出 —— 负责把命令与结果渲染到左侧终端区域
-import { G } from './state.js';
+import { G, app } from './state.js';
 
 const termEl = document.getElementById('terminal');
 
@@ -8,6 +8,8 @@ export function esc(s) {
 }
 
 export function promptText() {
+  const mod = app.currentModule;
+  if (mod && mod.prompt) return mod.prompt(app.engine || G);
   return `learngit (${G.headBranch || 'detached'}) $`;
 }
 

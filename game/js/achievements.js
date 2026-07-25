@@ -2,15 +2,21 @@
 // 成就是从进度数据（关卡星级 / 命令数 / 命令频次）实时推导的，
 // app.unlockedAch 只记录"已经见过"的成就 id，用于判断哪些是新解锁（弹提示用）。
 import { app } from './state.js';
-import { LEVELS } from './levels.js';
+import { ALL_LEVELS, getModules } from './modules.js';
 
 // 某阶段是否全部通关
 function stageCleared(ls, stageName) {
-  return LEVELS.every((lv, i) => lv.stage !== stageName || ls[i] > 0);
+  return ALL_LEVELS.every((lv, i) => lv.stage !== stageName || ls[i] > 0);
+}
+// 某模块是否全部通关
+function moduleCleared(ls, moduleId) {
+  const m = getModules().find(x => x.id === moduleId);
+  if (!m) return false;
+  return ls.slice(m.offset, m.offset + m.levels.length).every(s => s > 0);
 }
 // 某阶段获得的星星数
 function stageStars(ls, stageName) {
-  return LEVELS.reduce((sum, lv, i) => (lv.stage === stageName ? sum + (ls[i] || 0) : sum), 0);
+  return ALL_LEVELS.reduce((sum, lv, i) => (lv.stage === stageName ? sum + (ls[i] || 0) : sum), 0);
 }
 
 export const ACHIEVEMENTS = [
@@ -28,7 +34,7 @@ export const ACHIEVEMENTS = [
   },
   {
     id: 'conflict-slayer', icon: '⚔️', title: '冲突终结者', desc: '解决一次合并冲突',
-    check: c => { const i = LEVELS.findIndex(l => l.title.includes('冲突')); return i >= 0 && c.levelStars[i] > 0; },
+    check: c => { const i = ALL_LEVELS.findIndex(l => l.title.includes('冲突')); return i >= 0 && c.levelStars[i] > 0; },
   },
   {
     id: 'three-star', icon: '🌟', title: '三星学霸', desc: '在任意一关拿到 3 星',
@@ -36,15 +42,15 @@ export const ACHIEVEMENTS = [
   },
   {
     id: 'halfway', icon: '⛰️', title: '半山腰', desc: '通关一半以上的关卡',
-    check: c => c.levelStars.filter(s => s > 0).length >= Math.ceil(LEVELS.length / 2),
+    check: c => c.levelStars.filter(s => s > 0).length >= Math.ceil(ALL_LEVELS.length / 2),
   },
   {
-    id: 'all-clear', icon: '🏆', title: '全部通关', desc: `通关全部 ${LEVELS.length} 个关卡`,
-    check: c => c.levelStars.length >= LEVELS.length && c.levelStars.every(s => s > 0),
+    id: 'all-clear', icon: '🏆', title: '全部通关', desc: `通关全部 ${ALL_LEVELS.length} 个关卡`,
+    check: c => c.levelStars.length >= ALL_LEVELS.length && c.levelStars.slice(0, ALL_LEVELS.length).every(s => s > 0),
   },
   {
     id: 'perfectionist', icon: '💎', title: '完美主义者', desc: '所有关卡都拿到 3 星',
-    check: c => c.levelStars.length >= LEVELS.length && c.levelStars.every(s => s === 3),
+    check: c => c.levelStars.length >= ALL_LEVELS.length && c.levelStars.slice(0, ALL_LEVELS.length).every(s => s === 3),
   },
   {
     id: 'advanced', icon: '🧙', title: '高级玩家', desc: '通关「高级」阶段全部关卡',
@@ -71,8 +77,51 @@ export const ACHIEVEMENTS = [
     check: c => (c.cmdUsage['git merge'] || 0) >= 5,
   },
   {
-    id: 'collector', icon: '⭐', title: '星星收藏家', desc: `累计获得 ${Math.ceil(LEVELS.length * 3 * 0.6)} 颗星星`,
-    check: c => c.levelStars.reduce((a, b) => a + b, 0) >= Math.ceil(LEVELS.length * 3 * 0.6),
+    id: 'collector', icon: '⭐', title: '星星收藏家', desc: `累计获得 ${Math.ceil(ALL_LEVELS.length * 3 * 0.6)} 颗星星`,
+    check: c => c.levelStars.reduce((a, b) => a + b, 0) >= Math.ceil(ALL_LEVELS.length * 3 * 0.6),
+  },
+  /* ── Linux 模块 ── */
+  {
+    id: 'pipe-plumber', icon: '🔧', title: '管道水管工', desc: '通关「管道与文本」阶段全部关卡',
+    check: c => stageCleared(c.levelStars, '02 管道与文本'),
+  },
+  {
+    id: 'linux-master', icon: '🐧', title: 'Linux 大师', desc: '通关 Linux 基础模块全部关卡',
+    check: c => moduleCleared(c.levelStars, 'linux'),
+  },
+  /* ── Shell × Git 模块 ── */
+  {
+    id: 'script-kiddie', icon: '📜', title: '脚本小子', desc: '用 bash 运行过一个脚本',
+    check: c => (c.cmdUsage['bash'] || 0) > 0,
+  },
+  {
+    id: 'sed-surgeon', icon: '🔬', title: 'sed 外科医生', desc: '累计使用 sed 修改文本 3 次',
+    check: c => (c.cmdUsage['sed'] || 0) >= 3,
+  },
+  /* ── Docker / SSH 模块 ── */
+  {
+    id: 'container-captain', icon: '🐳', title: '容器船长', desc: '通关「容器基础」阶段全部关卡',
+    check: c => stageCleared(c.levelStars, '01 容器基础'),
+  },
+  {
+    id: 'compose-conductor', icon: '🎼', title: '编排指挥家', desc: '用 docker-compose 拉起多服务',
+    check: c => (c.cmdUsage['docker-compose'] || 0) > 0,
+  },
+  {
+    id: 'ssh-agent', icon: '🔐', title: 'SSH 特工', desc: '通过 SSH 登录远程主机',
+    check: c => (c.cmdUsage['ssh'] || 0) > 0,
+  },
+  {
+    id: 'cargo-shipper', icon: '📦', title: '货运司机', desc: '用 scp 或 rsync 传输过文件',
+    check: c => (c.cmdUsage['scp'] || 0) > 0 || (c.cmdUsage['rsync'] || 0) > 0,
+  },
+  {
+    id: 'ops-master', icon: '🛠️', title: '运维大师', desc: '通关 Docker 运维模块全部关卡',
+    check: c => moduleCleared(c.levelStars, 'ops'),
+  },
+  {
+    id: 'polyglot', icon: '🧭', title: '跨界达人', desc: '在每个模块都至少通关 1 关',
+    check: c => getModules().every(m => c.levelStars.slice(m.offset, m.offset + m.levels.length).some(s => s > 0)),
   },
 ];
 

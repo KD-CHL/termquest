@@ -76,6 +76,25 @@ header{
   border-radius:12px;padding:12px 22px;cursor:pointer;transition:.2s;box-shadow:0 4px 18px rgba(63,185,80,.3);
 }
 .sandbox-btn:hover{transform:translateY(-2px);filter:brightness(1.08)}
+
+/* 模块选择器 */
+.module-selector{display:flex;justify-content:center;gap:14px;margin:0 auto 30px;max-width:1080px;flex-wrap:wrap}
+.module-card{
+  display:flex;flex-direction:column;align-items:center;gap:4px;min-width:140px;
+  background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:16px 22px;
+  color:var(--text);cursor:pointer;transition:.22s;font-family:inherit;position:relative;overflow:hidden;
+}
+.module-card::after{
+  content:'';position:absolute;bottom:0;left:0;right:0;height:3px;
+  background:var(--mc,var(--green));opacity:0;transition:.22s;
+}
+.module-card:hover{border-color:var(--border-hi);transform:translateY(-3px);box-shadow:0 8px 24px rgba(0,0,0,.4)}
+.module-card.active{border-color:var(--mc,var(--green));box-shadow:0 0 20px color-mix(in srgb,var(--mc,var(--green)) 25%,transparent)}
+.module-card.active::after{opacity:1}
+.module-card .mc-icon{font-size:26px}
+.module-card b{font-size:14px}
+.module-card .mc-sub{font-size:11px;color:var(--dim);font-family:var(--mono)}
+
 .stage-block{max-width:1080px;margin:0 auto 30px}
 .stage-head{display:flex;align-items:center;gap:10px;margin-bottom:14px}
 .stage-head .num{
@@ -198,6 +217,48 @@ header{
 .fstatus.conflict{background:rgba(248,81,73,.2);color:var(--red);animation:blink 1s infinite}
 @keyframes blink{50%{opacity:.5}}
 .fstatus.clean{background:rgba(139,148,158,.1);color:var(--dim)}
+
+/* Linux 模块面板 */
+.tree-cwd{font-family:var(--mono);font-size:12px;color:var(--teal);padding:4px 2px 8px;font-weight:600}
+.tree-pre{
+  font-family:var(--mono);font-size:12px;line-height:1.7;color:var(--text);
+  background:rgba(255,255,255,.025);border:1px solid var(--border);border-radius:10px;
+  padding:10px 12px;margin:0;white-space:pre;overflow-x:auto;
+}
+.proc-head{
+  display:grid;grid-template-columns:44px 1fr 40px 48px;gap:6px;
+  font-size:10px;text-transform:uppercase;letter-spacing:.8px;color:var(--faint);
+  padding:4px 11px 6px;font-weight:700;
+}
+.proc-row{
+  display:grid;grid-template-columns:44px 1fr 40px 48px;gap:6px;align-items:center;
+  font-family:var(--mono);font-size:12px;padding:5px 11px;border-radius:8px;
+  background:rgba(255,255,255,.03);margin-bottom:4px;
+}
+.proc-pid{color:var(--blue)}
+.proc-name{color:var(--text);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.proc-state{font-weight:700;text-align:center;border-radius:6px;padding:1px 0;font-size:10px}
+.proc-state.run{background:rgba(63,185,80,.16);color:var(--green)}
+.proc-state.slp{background:rgba(139,148,158,.12);color:var(--dim)}
+.proc-state.zom{background:rgba(248,81,73,.16);color:var(--red)}
+.proc-cpu{color:var(--amber);text-align:right;font-size:11px}
+.proc-jobs{font-family:var(--mono);font-size:11px;color:var(--purple);padding:6px 11px 2px;line-height:1.6}
+
+/* Docker 模块面板 */
+.ssh-banner{
+  font-family:var(--mono);font-size:11.5px;color:#0e2a1f;background:linear-gradient(90deg,#2dd4bf,#3fb950);
+  border-radius:8px;padding:6px 11px;margin-bottom:8px;font-weight:700;
+}
+.img-item{background:rgba(255,255,255,.03);border-radius:8px;padding:7px 11px;margin-bottom:6px}
+.img-name{font-family:var(--mono);font-size:12px;color:var(--text);font-weight:600}
+.img-tag{color:var(--teal)}
+.img-meta{float:right;color:var(--faint);font-size:10.5px;font-weight:400}
+.img-layers{margin-top:5px;display:flex;flex-wrap:wrap;gap:4px}
+.img-layer{
+  font-family:var(--mono);font-size:10px;color:var(--dim);background:rgba(45,212,191,.08);
+  border:1px solid rgba(45,212,191,.18);border-radius:5px;padding:1.5px 6px;
+  max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
 
 /* 弹窗 */
 .overlay{position:fixed;inset:0;background:rgba(4,6,10,.7);backdrop-filter:blur(4px);display:none;align-items:center;justify-content:center;z-index:100}

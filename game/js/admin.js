@@ -1,6 +1,6 @@
 // 管理面板 —— 仅 admin 可访问：用户统计 / 进度一览 / 角色管理 / 删除用户
 import { requireAdmin, getToken, logout } from './auth.js';
-import { LEVELS } from './levels.js';
+import { ALL_LEVELS } from './modules.js';
 
 async function api(path, { method = 'GET', body } = {}) {
   const headers = { 'Content-Type': 'application/json' };
@@ -13,7 +13,7 @@ async function api(path, { method = 'GET', body } = {}) {
   return data;
 }
 
-const TOTAL_LEVELS = LEVELS.length, MAX_STARS = TOTAL_LEVELS * 3;
+const TOTAL_LEVELS = ALL_LEVELS.length, MAX_STARS = TOTAL_LEVELS * 3;
 let me = null;
 let allUsers = [];
 

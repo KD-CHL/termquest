@@ -1,10 +1,11 @@
 // 三个数据面板 —— 排行榜 / 个人统计 / 成就墙
 // 都以模态框形式打开，数据来自后端（排行榜）或本地 app 状态（统计/成就）。
 import { app } from './state.js';
-import { LEVELS } from './levels.js';
+import { ALL_LEVELS, getModules } from './modules.js';
 import { getToken } from './auth.js';
 import { ACHIEVEMENTS, computeUnlocked } from './achievements.js';
 import { showToast } from './ui.js';
+import { sfx } from './effects.js';
 
 function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
 
@@ -18,8 +19,8 @@ async function api(path) {
   return data;
 }
 
-const open = id => document.getElementById(id).classList.add('show');
-const close = id => document.getElementById(id).classList.remove('show');
+const open = id => { sfx('ui-open'); document.getElementById(id).classList.add('show'); };
+const close = id => { sfx('ui-close'); document.getElementById(id).classList.remove('show'); };
 
 /* ============ 排行榜 ============ */
 export function openLeaderboard() {
@@ -37,7 +38,7 @@ export function openLeaderboard() {
           <td class="lb-rank">${medals[i] || i + 1}</td>
           <td class="lb-name">${esc(r.username)}</td>
           <td class="lb-stars">★ ${r.stars}</td>
-          <td>${r.done}/${LEVELS.length}</td>
+          <td>${r.done}/${ALL_LEVELS.length}</td>
           <td class="lb-dim">${r.totalCmds}</td>
         </tr>`).join('')}
       </tbody></table>`;
@@ -54,8 +55,8 @@ export function openStats() {
 
   const done = app.levelStars.filter(s => s > 0).length;
   const stars = app.levelStars.reduce((a, b) => a + b, 0);
-  const maxStars = LEVELS.length * 3;
-  const pct = Math.round(done / LEVELS.length * 100);
+  const maxStars = ALL_LEVELS.length * 3;
+  const pct = Math.round(done / ALL_LEVELS.length * 100);
 
   // 进度环（SVG）
   const R = 52, C = 2 * Math.PI * R;
@@ -72,10 +73,22 @@ export function openStats() {
       <div class="st-ring-txt"><b>${pct}%</b><span>通关进度</span></div>
     </div>`;
 
+  // 各模块进度
+  const moduleRows = getModules().map(m => {
+    const slice = app.levelStars.slice(m.offset, m.offset + m.levels.length);
+    const mDone = slice.filter(s => s > 0).length;
+    const w = Math.round(mDone / m.levels.length * 100);
+    return `<div class="st-stage">
+      <span class="st-name">${m.icon} ${esc(m.name)}</span>
+      <div class="st-bar"><div class="st-fill" style="width:${w}%;background:linear-gradient(90deg,${m.color},${m.color}99)"></div></div>
+      <span class="st-val">${mDone}/${m.levels.length}</span>
+    </div>`;
+  }).join('');
+
   // 各阶段星级分布
-  const stages = [...new Set(LEVELS.map(l => l.stage))];
+  const stages = [...new Set(ALL_LEVELS.map(l => l.stage))];
   const stageRows = stages.map(st => {
-    const idx = LEVELS.map((l, i) => (l.stage === st ? i : -1)).filter(i => i >= 0);
+    const idx = ALL_LEVELS.map((l, i) => (l.stage === st ? i : -1)).filter(i => i >= 0);
     const got = idx.reduce((a, i) => a + (app.levelStars[i] || 0), 0);
     const total = idx.length * 3;
     const w = Math.round(got / total * 100);
@@ -101,12 +114,13 @@ export function openStats() {
     <div class="st-top">
       ${ring}
       <div class="st-nums">
-        <div class="st-num"><b>${done}/${LEVELS.length}</b><span>已通关</span></div>
+        <div class="st-num"><b>${done}/${ALL_LEVELS.length}</b><span>已通关</span></div>
         <div class="st-num"><b>${stars}/${maxStars}</b><span>星星</span></div>
         <div class="st-num"><b>${app.totalCmds}</b><span>累计命令</span></div>
         <div class="st-num"><b>${computeUnlocked({ levelStars: app.levelStars, totalCmds: app.totalCmds, cmdUsage: app.cmdUsage }).length}/${ACHIEVEMENTS.length}</b><span>成就</span></div>
       </div>
     </div>
+    <h4 class="st-h">模块进度</h4>${moduleRows}
     <h4 class="st-h">各阶段星级</h4>${stageRows}
     <h4 class="st-h">常用命令 Top 8</h4>${usageRows}`;
 }

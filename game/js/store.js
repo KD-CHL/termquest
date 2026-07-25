@@ -1,10 +1,17 @@
 // 进度持久化 —— 以后端为主、localStorage 为缓存
 // 登录用户的进度与账号绑定（存服务器），未登录/离线时回退到 localStorage。
 import { app } from './state.js';
-import { LEVELS } from './levels.js';
+import { ALL_LEVELS } from './modules.js';
 import { saveRemoteProgress } from './auth.js';
 
 const LS_KEY = 'gitgame';
+
+// 确保 levelStars 数组长度与全局关卡数一致（旧数据可能更短）
+function padStars(arr) {
+  const a = Array.isArray(arr) ? arr.slice(0, ALL_LEVELS.length) : [];
+  while (a.length < ALL_LEVELS.length) a.push(0);
+  return a;
+}
 
 export function saveProgress() {
   // 本地缓存（离线兜底）
@@ -20,7 +27,7 @@ export function loadProgress(user) {
   const remote = user && user.progress && Array.isArray(user.progress.levelStars) && user.progress.levelStars.length
     ? user.progress : null;
   if (remote) {
-    app.levelStars = remote.levelStars.slice(0, LEVELS.length);
+    app.levelStars = padStars(remote.levelStars);
     app.totalCmds = remote.totalCmds || 0;
     app.cmdUsage = remote.cmdUsage || {};
     app.unlockedAch = remote.achievements || [];
@@ -30,16 +37,10 @@ export function loadProgress(user) {
   try {
     const d = JSON.parse(localStorage.getItem(LS_KEY));
     if (d) {
-      app.levelStars = d.levelStars || app.levelStars;
+      app.levelStars = padStars(d.levelStars);
       app.totalCmds = d.totalCmds || 0;
       app.cmdUsage = d.cmdUsage || {};
       app.unlockedAch = d.unlockedAch || [];
     }
   } catch (e) { /* 忽略 */ }
-}
-
-export function unlockedCount() {
-  let n = 1;
-  for (let i = 0; i < LEVELS.length - 1; i++) { if (app.levelStars[i] > 0) n = i + 2; else break; }
-  return n;
 }

@@ -2,22 +2,25 @@
 // （ES Module 有自己的作用域，index.html 里的 onclick="xxx()" 找不到模块内函数，
 //  所以这里统一暴露到全局。）
 import { app, isAdmin } from './state.js';
-import { LEVELS } from './levels.js';
+import { ALL_LEVELS, initModules } from './modules.js';
 import { loadProgress } from './store.js';
 import { toggleSound } from './effects.js';
 import { requireAuth, logout } from './auth.js';
 import {
   showScreen, goHome, renderHome, startLevel, startSandbox, restartLevel,
-  toggleHint, closeModal, nextLevel, renderSheet, toggleSheet,
+  toggleHint, closeModal, nextLevel, renderSheet, toggleSheet, selectModule,
 } from './ui.js';
 import { initInput, applySuggest } from './input.js';
 import {
   openLeaderboard, closeLeaderboard, openStats, closeStats, openAchievements, closeAchievements,
 } from './panels.js';
 
-// 按关卡数初始化进度数组
-app.levelStars = new Array(LEVELS.length).fill(0);
-app.levelDoneFlags = new Array(LEVELS.length).fill(false);
+// 初始化模块系统（设置 app.currentModule / app.engine）
+initModules();
+
+// 按全局关卡数初始化进度数组
+app.levelStars = new Array(ALL_LEVELS.length).fill(0);
+app.levelDoneFlags = new Array(ALL_LEVELS.length).fill(false);
 
 // 渲染头部用户信息（用户名 + 管理入口 + 退出）
 function renderUserBar(user) {
@@ -55,6 +58,6 @@ init();
 Object.assign(window, {
   goHome, toggleSheet, toggleSound, restartLevel, toggleHint,
   closeModal, nextLevel, startLevel, startSandbox, applySuggest,
-  gameLogout,
+  gameLogout, selectModule,
   openLeaderboard, closeLeaderboard, openStats, closeStats, openAchievements, closeAchievements,
 });

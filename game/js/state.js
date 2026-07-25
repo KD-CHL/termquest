@@ -16,6 +16,9 @@ export const app = {
   soundOn: true,
   sandbox: false,        // 自由模式
   currentUser: null,     // 当前登录用户 {id, username, role, progress}
+  // 多模块支持
+  currentModule: null,   // 当前模块描述符（由 modules.js 初始化）
+  engine: null,          // 当前引擎实例（由 modules.js 初始化）
   // 命令执行后的回调钩子（由 ui.js 注入），解耦 commands 与 ui
   afterCommand: null,    // (shouldCheck) => void
 };
