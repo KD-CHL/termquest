@@ -63,7 +63,8 @@ export function execute(input) {
     status: cmdStatus, add: cmdAdd, commit: cmdCommit, log: cmdLog, diff: cmdDiff, branch: cmdBranch,
     switch: cmdSwitch, checkout: cmdSwitch, merge: cmdMerge, reset: cmdReset, restore: cmdRestore,
     stash: cmdStash, tag: cmdTag, show: cmdShow, 'cherry-pick': cmdCherryPick, rebase: cmdRebase,
-    revert: cmdRevert, reflog: cmdReflog
+    revert: cmdRevert, reflog: cmdReflog, clean: cmdClean, config: cmdConfig,
+    remote: cmdRemote, clone: cmdClone, push: cmdPush, pull: cmdPull, fetch: cmdFetch
   }[sub];
   if (!fn) { sfx('err-syntax'); return print(`git ${sub}: 暂不支持`, 'err'); }
   track('git ' + sub);
@@ -104,9 +105,20 @@ function cmdAdd(rest) {
   if (n) print(`已暂存 ${n} 个文件`, 'out'); sfx('file-create'); after(true);
 }
 
-function cmdCommit(rest) {
+function cmdCommit(rawRest) {
+  // 归一化组合短 flag：-am → -a -m
+  const rest = []; for (const a of rawRest) { if (a === '-am') rest.push('-a', '-m'); else rest.push(a); }
   let msg = null; for (let i = 0; i < rest.length; i++) if (rest[i] === '-m') msg = rest[i + 1];
   const amend = rest.includes('--amend'), noEdit = rest.includes('--no-edit');
+  const allowEmpty = rest.includes('--allow-empty');
+  // -a：提交前自动暂存所有"已跟踪且有修改"的文件
+  if (rest.includes('-a')) {
+    const ht0 = G.headTree();
+    for (const f in G.files) {
+      if (G.index[f] !== undefined) { if (G.files[f] !== G.index[f]) G.index[f] = G.files[f]; }
+      else if (ht0[f] !== undefined && G.files[f] !== ht0[f]) G.index[f] = G.files[f];
+    }
+  }
   const ht = G.headTree();
   const changed = Object.keys(G.index).some(f => G.index[f] !== ht[f]) || Object.keys(ht).some(f => G.index[f] === undefined);
   if (G.mergeInProgress) {
@@ -119,7 +131,7 @@ function cmdCommit(rest) {
     G.pushReflog(id, `commit (merge): Merge branch '${mp.branch}'`);
     print(`[${G.headBranch} ${id.slice(0, 7)}] Merge branch '${mp.branch}'`, 'ok'); sfxOk(); after(true); return;
   }
-  if (!changed && !amend) return print('nothing to commit, working tree clean', 'warn');
+  if (!changed && !amend && !allowEmpty) return print('nothing to commit, working tree clean', 'warn');
   if (amend && !G.headCommit) return print('fatal: 没有可修改的提交', 'err');
   if (!msg && !(amend && noEdit)) msg = msg || (amend ? G.commits[G.headCommit].msg : 'commit ' + G.newId());
   if (amend && noEdit) msg = G.commits[G.headCommit].msg;
@@ -133,29 +145,157 @@ function cmdCommit(rest) {
 
 function cmdLog(rest) {
   const oneline = rest.includes('--oneline');
-  const ref = rest.filter(a => !a.startsWith('--'))[0];
-  let cur = ref ? G.resolve(ref) : G.headCommit;
-  if (ref && cur === undefined) return print(`fatal: 无法解析 '${ref}'`, 'err');
-  if (!cur) return print('fatal: 还没有任何提交', 'err');
-  while (cur) {
-    const c = G.commits[cur];
-    if (oneline) print(`${cur.slice(0, 7)} ${c.msg}`, 'info');
-    else { print(`commit ${cur}`, 'warn'); print(`    ${c.msg}`, 'out'); }
-    cur = c.parents[0];
+  const graph = rest.includes('--graph');
+  const showAll = rest.includes('--all');
+  const stat = rest.includes('--stat');
+  const patch = rest.includes('-p');
+  let limit = Infinity;
+  const ni = rest.indexOf('-n');
+  if (ni >= 0) { const v = parseInt(rest[ni + 1]); if (!isNaN(v) && v >= 0) limit = v; }
+  const ref = rest.filter((a, i) => !a.startsWith('-') && rest[i - 1] !== '-n')[0];
+
+  let ids;
+  if (showAll || graph) {
+    // 收集所有可达提交（--all 取全部分支/标签起点，否则从 HEAD 或指定 ref 出发）
+    let starts;
+    if (showAll) starts = [...Object.values(G.branches), ...Object.values(G.tags)].filter(Boolean);
+    else {
+      const s = ref ? G.resolve(ref) : G.headCommit;
+      if (ref && s === undefined) return print(`fatal: 无法解析 '${ref}'`, 'err');
+      starts = s ? [s] : [];
+    }
+    if (!starts.length) return print('fatal: 还没有任何提交', 'err');
+    const seen = new Set(); const stack = [...starts];
+    while (stack.length) {
+      const id = stack.pop();
+      if (!id || seen.has(id)) continue;
+      seen.add(id); G.commits[id].parents.forEach(p => stack.push(p));
+    }
+    ids = [...seen].sort((a, b) => parseInt(b, 16) - parseInt(a, 16));
+  } else {
+    let cur = ref ? G.resolve(ref) : G.headCommit;
+    if (ref && cur === undefined) return print(`fatal: 无法解析 '${ref}'`, 'err');
+    if (!cur) return print('fatal: 还没有任何提交', 'err');
+    ids = [];
+    while (cur) { ids.push(cur); cur = G.commits[cur].parents[0]; }
+  }
+  if (limit !== Infinity) ids = ids.slice(0, limit);
+
+  if (graph) {
+    // ASCII 分支图谱：泳道算法，'*' 为提交，'|' 为进行中的分支线
+    const lanes = [];
+    for (const id of ids) {
+      const c = G.commits[id];
+      let lane = lanes.indexOf(id);
+      if (lane === -1) { lane = lanes.indexOf(null); if (lane === -1) { lane = lanes.length; lanes.push(null); } }
+      let prefix = '';
+      for (let i = 0; i < lanes.length; i++) prefix += i === lane ? '* ' : (lanes[i] ? '| ' : '  ');
+      print(`${prefix}${id.slice(0, 7)} ${c.msg}`, 'info');
+      for (let i = 0; i < lanes.length; i++) if (i !== lane && lanes[i] === id) lanes[i] = null;
+      lanes[lane] = c.parents[0] || null;
+      for (let p = 1; p < c.parents.length; p++) {
+        let pl = lanes.indexOf(null); if (pl === -1) { pl = lanes.length; lanes.push(null); }
+        lanes[pl] = c.parents[p];
+      }
+    }
+    return;
+  }
+
+  for (const id of ids) {
+    const c = G.commits[id];
+    if (oneline) print(`${id.slice(0, 7)} ${c.msg}`, 'info');
+    else {
+      print(`commit ${id}`, 'warn');
+      print(`    ${c.msg}`, 'out');
+      if (stat) commitStatLines(c).forEach(l => print(l, 'dim'));
+      if (patch) commitPatchLines(c).forEach(x => print(x.t, x.cls));
+    }
   }
 }
 
-function cmdDiff() {
-  const ht = G.headTree(); let any = false;
-  for (const f in G.files) {
-    const base = G.index[f] !== undefined ? G.index[f] : ht[f];
-    if (base !== undefined && G.files[f] !== base) {
-      any = true;
-      print(`diff --git a/${f} b/${f}`, 'info'); print(`--- a/${f}`, 'out'); print(`+++ b/${f}`, 'out');
-      print(`- ${base.trim()}`, 'err'); print(`+ ${G.files[f].trim()}`, 'ok');
+// 提交相对第一父提交的文件改动统计（--stat）
+function commitStatLines(c) {
+  const pt = c.parents[0] && G.commits[c.parents[0]] ? G.commits[c.parents[0]].tree : {};
+  const out = [];
+  const names = new Set([...Object.keys(pt), ...Object.keys(c.tree)]);
+  for (const f of names) {
+    if (pt[f] === c.tree[f]) continue;
+    const a = pt[f] === undefined ? [] : String(pt[f]).replace(/\n$/, '').split('\n');
+    const b = c.tree[f] === undefined ? [] : String(c.tree[f]).replace(/\n$/, '').split('\n');
+    let add = 0, del = 0;
+    const max = Math.max(a.length, b.length);
+    for (let i = 0; i < max; i++) if (a[i] !== b[i]) { if (i < b.length) add++; if (i < a.length) del++; }
+    out.push(` ${f} | +${add} -${del}`);
+  }
+  return out.length ? out : [' (无文件改动)'];
+}
+
+// 提交相对第一父提交的补丁（-p）
+function commitPatchLines(c) {
+  const pt = c.parents[0] && G.commits[c.parents[0]] ? G.commits[c.parents[0]].tree : {};
+  const out = [];
+  const names = new Set([...Object.keys(pt), ...Object.keys(c.tree)]);
+  for (const f of names) {
+    if (pt[f] === c.tree[f]) continue;
+    out.push({ t: `diff --git a/${f} b/${f}`, cls: 'info' });
+    out.push({ t: `--- a/${f}`, cls: 'out' });
+    out.push({ t: `+++ b/${f}`, cls: 'out' });
+    if (pt[f] !== undefined) out.push({ t: `- ${String(pt[f]).trim()}`, cls: 'err' });
+    if (c.tree[f] !== undefined) out.push({ t: `+ ${String(c.tree[f]).trim()}`, cls: 'ok' });
+  }
+  return out;
+}
+
+function cmdDiff(rest) {
+  const staged = rest.includes('--staged') || rest.includes('--cached');
+  const args = rest.filter(a => !a.startsWith('-'));
+  const ht = G.headTree();
+
+  if (staged) {
+    // 暂存区 vs HEAD
+    let any = false;
+    const names = new Set([...Object.keys(G.index), ...Object.keys(ht)]);
+    for (const f of names) {
+      if (args.length && !args.includes(f)) continue;
+      if (G.index[f] !== ht[f]) { any = true; printDiffFile(f, ht[f], G.index[f]); }
+    }
+    if (!any) print('(无差异)', 'out');
+    return;
+  }
+
+  // 解析位置参数：文件优先，其次当作 ref
+  let refTree = null, fileFilter = null;
+  if (args[0]) {
+    const isFile = G.files[args[0]] !== undefined || G.index[args[0]] !== undefined || ht[args[0]] !== undefined;
+    if (isFile) fileFilter = args[0];
+    else {
+      const rid = G.resolve(args[0]);
+      if (rid !== undefined && G.commits[rid]) refTree = G.commits[rid].tree;
+      else return print(`fatal: 无法解析 '${args[0]}'`, 'err');
+    }
+  }
+
+  let any = false;
+  if (refTree) {
+    // 工作区 vs 指定提交
+    for (const f in G.files) {
+      if (G.files[f] !== refTree[f]) { any = true; printDiffFile(f, refTree[f], G.files[f]); }
+    }
+  } else {
+    // 默认：工作区 vs 暂存区（缺省回退到 HEAD）
+    for (const f in G.files) {
+      if (fileFilter && f !== fileFilter) continue;
+      const base = G.index[f] !== undefined ? G.index[f] : ht[f];
+      if (base !== undefined && G.files[f] !== base) { any = true; printDiffFile(f, base, G.files[f]); }
     }
   }
   if (!any) print('(无差异)', 'out');
+}
+
+function printDiffFile(f, oldC, newC) {
+  print(`diff --git a/${f} b/${f}`, 'info'); print(`--- a/${f}`, 'out'); print(`+++ b/${f}`, 'out');
+  if (oldC !== undefined) print(`- ${String(oldC).trim()}`, 'err');
+  if (newC !== undefined) print(`+ ${String(newC).trim()}`, 'ok');
 }
 
 function cmdBranch(rest) {
@@ -168,6 +308,25 @@ function cmdBranch(rest) {
     if (G.branches[n] === undefined) return print(`error: 分支 '${n}' 不存在`, 'err');
     if (n === G.headBranch) return print('error: 不能删除当前分支', 'err');
     delete G.branches[n]; print(`Deleted branch ${n}`, 'ok'); after(false); return;
+  }
+  if (rest[0] === '-v') {
+    for (const b in G.branches) {
+      const id = G.branches[b];
+      const c = id ? G.commits[id] : null;
+      print(`${b === G.headBranch ? '*' : ' '} ${b} ${id ? id.slice(0, 7) : '(空)'} ${c ? c.msg : ''}`, b === G.headBranch ? 'ok' : 'out');
+    }
+    return;
+  }
+  if (rest[0] === '-m') {
+    if (!G.headBranch) return print('fatal: 不在分支上，无法重命名', 'err');
+    const newName = rest[1];
+    if (!newName) return print('用法: git branch -m <新名称>', 'err');
+    if (G.branches[newName] !== undefined) return print(`fatal: 分支 '${newName}' 已存在`, 'err');
+    const old = G.headBranch;
+    G.branches[newName] = G.branches[old];
+    delete G.branches[old];
+    G.HEAD = newName;
+    print(`已将分支 '${old}' 重命名为 '${newName}'`, 'ok'); after(true); return;
   }
   const n = rest[0];
   if (G.branches[n] !== undefined) return print(`fatal: 分支 '${n}' 已存在`, 'err');
@@ -268,20 +427,61 @@ function cmdStash(rest) {
     if (sub === 'pop') G.stash.shift();
     print('已恢复暂存的工作', 'ok'); sfx('ui-open'); after(true); return;
   }
+  if (sub === 'drop') {
+    if (!G.stash.length) return print('No stash entries found.', 'err');
+    const s = G.stash.shift();
+    print(`Dropped stash@{0} (${s.msg})`, 'ok'); sfx('file-delete'); after(true); return;
+  }
+  if (sub === 'show') {
+    if (!G.stash.length) return print('No stash entries found.', 'err');
+    const s = G.stash[0];
+    print(`stash@{0}: ${s.msg}`, 'info');
+    const ht = G.headTree();
+    const names = new Set([...Object.keys(s.files), ...Object.keys(ht)]);
+    let any = false;
+    for (const f of names) if (s.files[f] !== ht[f]) { print(` ${f}`, 'out'); any = true; }
+    if (!any) print(' (与 HEAD 无差异)', 'out');
+    return;
+  }
+  if (sub === 'push') {
+    const mi = rest.indexOf('-m');
+    doStashPush(mi >= 0 && rest[mi + 1] ? rest[mi + 1] : `WIP on ${G.headBranch || 'detached'}`);
+    return;
+  }
+  doStashPush(`WIP on ${G.headBranch || 'detached'}`);
+}
+
+function doStashPush(msg) {
   const ht = G.headTree();
   const dirty = JSON.stringify(G.files) !== JSON.stringify(ht) || JSON.stringify(G.index) !== JSON.stringify(ht);
   if (!dirty) return print('No local changes to save', 'warn');
-  G.stash.unshift({ files: G.snap(G.files), index: G.snap(G.index), msg: `WIP on ${G.headBranch || 'detached'}` });
+  G.stash.unshift({ files: G.snap(G.files), index: G.snap(G.index), msg });
   G.files = G.snap(ht); G.index = G.snap(ht);
   print('Saved working directory and index state', 'ok'); sfx('ui-close'); after(true);
 }
 
 function cmdTag(rest) {
-  const args = rest.filter(a => a !== '-a' && a !== '-m');
   if (!rest.length) {
     const n = Object.keys(G.tags);
     if (!n.length) return print('(暂无标签)', 'out'); n.forEach(x => print(x, 'info')); return;
   }
+  if (rest[0] === '-d') {
+    const n = rest[1];
+    if (!n || G.tags[n] === undefined) return print(`error: 标签 '${n || ''}' 不存在`, 'err');
+    delete G.tags[n];
+    if (G.tagAnnotated) delete G.tagAnnotated[n];
+    print(`Deleted tag ${n}`, 'ok'); after(true); return;
+  }
+  if (rest.includes('-a')) {
+    const name = rest.filter(a => a !== '-a' && a !== '-m')[0];
+    if (!name) return print('用法: git tag -a <名称> -m "信息"', 'err');
+    const mi = rest.indexOf('-m');
+    G.tags[name] = G.headCommit;
+    G.tagAnnotated = G.tagAnnotated || {};
+    G.tagAnnotated[name] = mi >= 0 ? String(rest[mi + 1] ?? '') : '';
+    print(`已创建附注标签 ${name} → ${String(G.headCommit).slice(0, 7)}`, 'ok'); after(true); return;
+  }
+  const args = rest.filter(a => a !== '-a' && a !== '-m');
   G.tags[args[0]] = G.headCommit;
   print(`已创建标签 ${args[0]} → ${String(G.headCommit).slice(0, 7)}`, 'ok'); after(true);
 }
@@ -362,10 +562,146 @@ function cmdReflog() {
     print(`${String(r.hash).slice(0, 7)} HEAD@{${i}}: ${r.action}`, 'info'));
 }
 
+function cmdClean(rest) {
+  const flags = rest.filter(a => a.startsWith('-')).join('');
+  if (!flags.includes('f')) return print('fatal: clean 需要 -f（强制）才能删除文件', 'err');
+  const ht = G.headTree();
+  const removed = [];
+  for (const f in G.files) {
+    if (G.index[f] === undefined && ht[f] === undefined) { delete G.files[f]; removed.push(f); }
+  }
+  if (!removed.length) return print('(没有未跟踪的文件需要清理)', 'out');
+  removed.forEach(f => print(`Removing ${f}`, 'out'));
+  sfx('file-delete'); after(true);
+}
+
+function cmdConfig(rest) {
+  if (!rest.length) return print('用法: git config <user.name|user.email> [值]', 'err');
+  G.config = G.config || {};
+  const key = rest.filter(a => !a.startsWith('-'))[0];
+  if (key !== 'user.name' && key !== 'user.email')
+    return print(`git config: 不支持的键 '${key}'（支持 user.name / user.email）`, 'err');
+  const vals = rest.filter(a => !a.startsWith('-')).slice(1);
+  if (vals.length) {
+    G.config[key] = vals.join(' ');
+    print(`已设置 ${key} = ${G.config[key]}`, 'ok'); after(true); return;
+  }
+  if (G.config[key] === undefined) return print(`(未设置 ${key})`, 'out');
+  print(G.config[key], 'out');
+}
+
+// ── 模拟远程仓库（快进式 push/pull/fetch + clone）──
+function cmdRemote(rest) {
+  G.remotes = G.remotes || {};
+  if (!rest.length || rest[0] === '-v') {
+    const names = Object.keys(G.remotes);
+    if (!names.length) return print('(暂无远程仓库)', 'out');
+    for (const n of names) {
+      print(`${n}  ${G.remotes[n].url} (fetch)`, 'info');
+      print(`${n}  ${G.remotes[n].url} (push)`, 'info');
+    }
+    return;
+  }
+  if (rest[0] === 'add') {
+    const name = rest[1], url = rest[2];
+    if (!name || !url) return print('用法: git remote add <名称> <url>', 'err');
+    if (G.remotes[name]) return print(`error: 远程 '${name}' 已存在`, 'err');
+    G.remotes[name] = { url, branches: {} };
+    print(`已添加远程 ${name} → ${url}`, 'ok'); after(true); return;
+  }
+  if (rest[0] === 'remove' || rest[0] === 'rm') {
+    const name = rest[1];
+    if (!name || !G.remotes[name]) return print(`error: 远程 '${name || ''}' 不存在`, 'err');
+    delete G.remotes[name];
+    print(`已删除远程 ${name}`, 'ok'); after(true); return;
+  }
+  return print('用法: git remote [-v] | git remote add <名称> <url> | git remote remove <名称>', 'err');
+}
+
+function cmdClone(rest) {
+  const url = rest[0];
+  if (!url) return print('用法: git clone <url>', 'err');
+  G.remotes = G.remotes || {};
+  const store = (G.remoteStores || {})[url] || Object.values(G.remotes).find(r => r.url === url);
+  if (!store) return print(`fatal: 仓库 '${url}' 不存在（模拟环境只能克隆预设的远程地址）`, 'err');
+  const branch = store.branches.main !== undefined ? 'main' : Object.keys(store.branches)[0];
+  const tip = branch !== undefined ? store.branches[branch] : undefined;
+  if (tip === undefined || !G.commits[tip]) return print('fatal: 远程仓库为空', 'err');
+  // 用远程内容初始化本地仓库
+  G.branches = { [branch]: tip };
+  G.HEAD = branch;
+  const tr = G.snap(G.commits[tip].tree);
+  G.files = tr; G.index = G.snap(tr);
+  G.stash = []; G.tags = {}; G.tagAnnotated = {}; G.reflog = []; G.mergeInProgress = null;
+  G.remotes = { origin: { url, branches: G.snap(store.branches) } };
+  print(`Cloning into 'termquest'...`, 'out');
+  print('remote: Enumerating objects: done.', 'dim');
+  print('Receiving objects: 100% (done)', 'dim');
+  print(`已克隆 ${url}（分支 ${branch} @ ${tip.slice(0, 7)}）`, 'ok');
+  G.pushReflog(tip, `clone: from ${url}`);
+  sfxOk(); after(true);
+}
+
+function cmdPush(rest) {
+  G.remotes = G.remotes || {};
+  const r = G.remotes.origin;
+  if (!r) return print('fatal: 没有配置远程仓库（git clone 或 git remote add origin <url>）', 'err');
+  const args = rest.filter(a => !a.startsWith('-') && a !== 'origin');
+  const branch = args[0] || G.headBranch;
+  if (!branch || G.branches[branch] === undefined) return print(`error: 分支 '${branch || '(无)'}' 不存在`, 'err');
+  const local = G.branches[branch], remoteTip = r.branches[branch];
+  if (remoteTip !== undefined && !G.isAncestor(remoteTip, local)) {
+    print(`To ${r.url}`, 'out');
+    print(` ! [rejected]        ${branch} -> ${branch} (non-fast-forward)`, 'err');
+    print('error: 推送被拒绝：远程包含本地没有的提交，先 git pull 合并', 'err');
+    sfxErr(); return;
+  }
+  r.branches[branch] = local;
+  print(`To ${r.url}`, 'out');
+  print(`   ${remoteTip ? remoteTip.slice(0, 7) : '(new)'}..${local.slice(0, 7)}  ${branch} -> ${branch}`, 'ok');
+  sfxOk(); after(true);
+}
+
+function cmdPull(rest) {
+  G.remotes = G.remotes || {};
+  const r = G.remotes.origin;
+  if (!r) return print('fatal: 没有配置远程仓库（git clone 或 git remote add origin <url>）', 'err');
+  const args = rest.filter(a => !a.startsWith('-') && a !== 'origin');
+  const branch = args[0] || G.headBranch;
+  if (!branch || G.branches[branch] === undefined) return print(`error: 分支 '${branch || '(无)'}' 不存在`, 'err');
+  const remoteTip = r.branches[branch];
+  if (remoteTip === undefined) return print(`fatal: 远程没有分支 '${branch}'`, 'err');
+  const local = G.branches[branch];
+  if (local === remoteTip) return print('Already up to date.', 'out');
+  if (!G.isAncestor(local, remoteTip))
+    return print('error: 本地与远程存在分叉，模拟环境仅支持快进式 pull（先提交或合并本地改动）', 'err');
+  G.branches[branch] = remoteTip;
+  const tr = G.snap(G.commits[remoteTip].tree);
+  G.files = tr; G.index = G.snap(tr);
+  G.pushReflog(remoteTip, `pull ${branch}: Fast-forward`);
+  print(`Updating ${String(local).slice(0, 7)}..${remoteTip.slice(0, 7)}`, 'out');
+  print('Fast-forward', 'ok'); sfxOk(); after(true);
+}
+
+function cmdFetch() {
+  G.remotes = G.remotes || {};
+  const r = G.remotes.origin;
+  if (!r) return print('fatal: 没有配置远程仓库（git clone 或 git remote add origin <url>）', 'err');
+  const names = Object.keys(r.branches);
+  if (!names.length) return print('远程暂无分支', 'out');
+  print(`From ${r.url}`, 'out');
+  for (const b of names) print(`   ${String(r.branches[b]).slice(0, 7)}  origin/${b}`, 'info');
+}
+
 function showHelp() {
   ['── 文件 ──', '  echo "内容" > 文件   /   echo "内容" >> 文件', '  ls · cat 文件 · rm 文件', '── Git ──',
-    '  git status · git diff · git log [--oneline] [分支]', '  git add <文件|.> · git commit -m "信息" [--amend --no-edit]',
-    '  git branch [名|-d] · git switch <分支|-c 新分支>', '  git merge <分支> [--abort] · git rebase <分支> · git cherry-pick <提交>',
-    '  git reset [--hard|--soft] HEAD~n · git restore [--staged] <文件>', '  git revert <提交> · git reflog · git stash [list|pop] · git tag [名称] · git show [提交]', '  clear 清屏'
+    '  git status · git diff [--staged] [ref|文件] · git log [--oneline|--graph|--stat|-p|-n N|--all] [分支]',
+    '  git add <文件|.> · git commit -m "信息" [-a] [--amend --no-edit] [--allow-empty]',
+    '  git branch [-v|-m 新名|-d] · git switch <分支|-c 新分支>',
+    '  git merge <分支> [--abort] · git rebase <分支> · git cherry-pick <提交>',
+    '  git reset [--hard|--soft] HEAD~n · git restore [--staged] <文件> · git clean -fd',
+    '  git revert <提交> · git reflog · git stash [push -m "信息"|list|show|pop|apply|drop]',
+    '  git tag [名称|-d 名称|-a 名称 -m "信息"] · git show [提交] · git config user.name [值]',
+    '  git remote [-v|add|remove] · git clone <url> · git push · git pull · git fetch', '  clear 清屏'
   ].forEach(l => print(l, 'info'));
 }

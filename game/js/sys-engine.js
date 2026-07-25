@@ -31,10 +31,10 @@ export class SysEngine extends LinuxEngine {
       { fs: '/dev/sdb1', size: '200G', used: '180G', avail: '20G', usePct: 90, mount: '/data' },
     ];
     this.blockDevices = [
-      { name: 'sda', size: '50G', type: 'disk', mount: '' },
-      { name: 'sda1', size: '50G', type: 'part', mount: '/' },
-      { name: 'sdb', size: '200G', type: 'disk', mount: '' },
-      { name: 'sdb1', size: '200G', type: 'part', mount: '/data' },
+      { name: 'sda', size: '50G', type: 'disk', mount: '', fsType: '' },
+      { name: 'sda1', size: '50G', type: 'part', mount: '/', fsType: 'ext4' },
+      { name: 'sdb', size: '200G', type: 'disk', mount: '', fsType: '' },
+      { name: 'sdb1', size: '200G', type: 'part', mount: '/data', fsType: 'ext4' },
     ];
     this.mounts = ['/dev/sda1 on / type ext4 (rw,relatime)', '/dev/sdb1 on /data type ext4 (rw)', 'tmpfs on /tmp type tmpfs (rw)'];
     // 定时任务

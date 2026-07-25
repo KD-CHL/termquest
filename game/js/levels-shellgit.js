@@ -130,4 +130,64 @@ export const SHELLGIT_LEVELS = [
     },
     done: '脚本驱动整个发布流程——CI/CD 流水线的雏形，恭喜毕业！'
   },
+
+  /* ============ 04 高级文本 ============ */
+  {
+    stage: '04 高级文本', id: 'S09', title: 'grep 精准定位', par: 4,
+    desc: 'errors.log 里出现过一次 <code>timeout</code>。先用 <code>grep -l timeout errors.log</code> 确认文件，再用 <code>grep -n</code> 找出行号，把带行号的结果重定向写入 hits.txt 并提交。',
+    hints: ['grep -l timeout errors.log', 'grep -n timeout errors.log > hits.txt', 'git add hits.txt', 'git commit -m "locate timeout"'],
+    setup(g) {
+      g.reset();
+      g.files['errors.log'] = g.index['errors.log'] = 'INFO start\nINFO ok\nERROR timeout\nINFO ok\nERROR crash\n';
+      const id = g.newId();
+      g.commits[id] = { id, msg: 'init', parents: [], tree: g.snap(g.index) };
+      g.branches.main = id;
+    },
+    check(g) {
+      const c = g.commits[g.branches.main];
+      return g.used.has('grep') && g.files['hits.txt'] !== undefined &&
+        g.files['hits.txt'].includes('3:') && c && c.tree['hits.txt'] !== undefined;
+    },
+    done: '-l 列出命中的文件，-n 给每行加上行号——排障时先定位、再处理。'
+  },
+  {
+    stage: '04 高级文本', id: 'S10', title: 'awk 条件筛选', par: 4,
+    desc: 'members.csv 是逗号分隔的 姓名,年龄,城市 表。用 <code>awk -F, \'$2 > 28 {print $1}\' members.csv</code> 筛出年龄大于 28 的成员姓名，写入 seniors.txt 并提交。',
+    hints: [`awk -F, '$2 > 28 {print $1}' members.csv`, `awk -F, '$2 > 28 {print $1}' members.csv > seniors.txt`, 'git add seniors.txt', 'git commit -m "senior members"'],
+    setup(g) {
+      g.reset();
+      g.files['members.csv'] = g.index['members.csv'] = 'alice,30,beijing\nbob,25,shanghai\ncarol,35,guangzhou\n';
+      const id = g.newId();
+      g.commits[id] = { id, msg: 'init', parents: [], tree: g.snap(g.index) };
+      g.branches.main = id;
+    },
+    check(g) {
+      const c = g.commits[g.branches.main];
+      return g.used.has('awk') && g.files['seniors.txt'] !== undefined &&
+        g.files['seniors.txt'].includes('alice') && g.files['seniors.txt'].includes('carol') &&
+        !g.files['seniors.txt'].includes('bob') && c && c.tree['seniors.txt'] !== undefined;
+    },
+    done: '-F 指定分隔符，$2 > 28 是条件、{print $1} 是动作——awk 就是命令行里的小数据库。'
+  },
+  {
+    stage: '04 高级文本', id: 'S11', title: 'sed 删行 + sort 排序', par: 5,
+    desc: 'config.txt 第 2 行是废弃配置，用 <code>sed -i \'2d\' config.txt</code> 删掉它；再用 <code>sort -k 2 -n users.txt</code> 按第 2 列年龄从小到大排序，写入 ranked.txt，最后一起提交。',
+    hints: [`sed -i '2d' config.txt`, 'cat config.txt', 'sort -k 2 -n users.txt > ranked.txt', 'git add .', 'git commit -m "cleanup"'],
+    setup(g) {
+      g.reset();
+      g.files['config.txt'] = g.index['config.txt'] = 'port=8080\n# deprecated\ndebug=false\n';
+      g.files['users.txt'] = g.index['users.txt'] = 'bob 25\nalice 30\ncarol 22\n';
+      const id = g.newId();
+      g.commits[id] = { id, msg: 'init', parents: [], tree: g.snap(g.index) };
+      g.branches.main = id;
+    },
+    check(g) {
+      const c = g.commits[g.branches.main];
+      return g.used.has('sed') && g.used.has('sort') &&
+        !g.files['config.txt'].includes('deprecated') &&
+        g.files['ranked.txt'] !== undefined && g.files['ranked.txt'].split('\n')[0].includes('carol') &&
+        c && c.tree['config.txt'] !== undefined && c.tree['ranked.txt'] !== undefined;
+    },
+    done: 'sed \'Nd\' 按行号删除，sort -k N 按第 N 列排序——文本整形的最后一块拼图。'
+  },
 ];

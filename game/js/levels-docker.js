@@ -127,4 +127,75 @@ export const OPS_LEVELS = [
     check(e) { return e.used.has('scp') && e.used.has('ssh') && e.remote.exists('/tmp/backup.sql'); },
     done: 'scp 走 SSH 通道加密传输，rsync -avz 还能增量同步——运维传文件的左膀右臂。毕业快乐！🎓'
   },
+
+  /* ============ 04 进阶运维 ============ */
+  {
+    stage: '04 进阶运维', id: 'D11', title: '环境变量与挂载', par: 2,
+    desc: '启动一个名为 <code>cache</code> 的 Redis 容器：用 <code>-e REDIS_PORT=6380</code> 注入环境变量，用 <code>-v redis-data:/data</code> 挂载数据卷，再 <code>docker inspect cache</code> 确认配置已生效。',
+    hints: ['docker run -d --name cache -e REDIS_PORT=6380 -v redis-data:/data redis:7', 'docker inspect cache'],
+    setup(e) {
+      e.reset();
+      e.seedImage('redis:7', ['FROM scratch', 'ADD redis binary /', 'CMD ["redis-server"]']);
+    },
+    check(e) {
+      const c = e.containers.find(x => x.name === 'cache');
+      return !!c && c.status === 'running' && c.env.REDIS_PORT === '6380' &&
+        c.mounts.some(m => m.source === 'redis-data' && m.target === '/data');
+    },
+    done: '-e 注入环境变量，-v 挂载存储卷——配置与数据分离，是容器化部署的基本功。'
+  },
+  {
+    stage: '04 进阶运维', id: 'D12', title: '筛选容器', par: 2,
+    desc: '主机上跑着好几个容器。先 <code>docker ps -a</code> 查看全部，再用 <code>docker ps --filter name=web -q</code> 精准筛出名字含 <code>web</code> 的运行中容器的 <b>id</b>。',
+    hints: ['docker ps -a', 'docker ps --filter name=web -q'],
+    setup(e) {
+      e.reset();
+      e.seedImage('nginx:alpine');
+      e.seedImage('postgres:15');
+      e.seedContainer('nginx:alpine', 'web1');
+      e.seedContainer('nginx:alpine', 'web2');
+      e.seedContainer('postgres:15', 'db1', { status: 'exited' });
+    },
+    check(e) {
+      const ids = e.containers.filter(c => c.name.includes('web') && c.status === 'running').map(c => c.id);
+      const lines = e.lastOut.split('\n').filter(Boolean);
+      return e.used.has('docker') && ids.length === 2 && lines.length === 2 && ids.every(id => lines.includes(id));
+    },
+    done: '--filter 按 name/status 过滤，-q 只输出 id——两者组合是脚本里批量操作容器的常用手法。'
+  },
+  {
+    stage: '04 进阶运维', id: 'D13', title: '大扫除释放空间', par: 3,
+    desc: '残留的 <code>dead-app</code> 和 <code>dead-worker</code> 早已停止。用 <code>docker system prune -f</code> 一次性清理它们和悬空镜像，注意运行中的 <code>live-app</code> 不能受影响。',
+    hints: ['docker ps -a', 'docker system prune -f', 'docker ps -a'],
+    setup(e) {
+      e.reset();
+      e.seedImage('app:1.0', ['FROM node:18', 'COPY . /app', 'CMD node app.js']);
+      e.seedImage('app:old', ['FROM node:16', 'COPY . /app', 'CMD node app.js']);
+      e.seedContainer('app:1.0', 'live-app');
+      e.seedContainer('app:old', 'dead-app', { status: 'exited' });
+      e.seedContainer('app:old', 'dead-worker', { status: 'exited' });
+    },
+    check(e) {
+      return e.used.has('docker') &&
+        !e.containers.some(c => c.name === 'dead-app') &&
+        !e.containers.some(c => c.name === 'dead-worker') &&
+        e.containers.some(c => c.name === 'live-app' && c.status === 'running');
+    },
+    done: 'system prune -f 一键清掉停止的容器与悬空镜像——磁盘告急时的救火队长。'
+  },
+  {
+    stage: '04 进阶运维', id: 'D14', title: '指定 Dockerfile 与层历史', par: 3,
+    desc: '生产环境的配方叫 <code>Dockerfile.prod</code>。用 <code>docker build -t myapp:prod -f Dockerfile.prod .</code> 构建镜像，再 <code>docker history myapp:prod</code> 查看它的层历史。',
+    hints: ['cat Dockerfile.prod', 'docker build -t myapp:prod -f Dockerfile.prod .', 'docker history myapp:prod'],
+    setup(e) {
+      e.reset();
+      e.writeFile('Dockerfile.prod', 'FROM node:18\nENV NODE_ENV=production\nCOPY . /app\nCMD node /app/server.js\n');
+    },
+    check(e) {
+      const img = e.findImage('myapp:prod');
+      return !!img && img.layers.some(l => l.toUpperCase().startsWith('ENV')) &&
+        e.lastOut.includes('NODE_ENV=production');
+    },
+    done: '-f 指定非默认 Dockerfile，history 逐层回看构建过程——镜像瘦身与审计都靠它。'
+  },
 ];

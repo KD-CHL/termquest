@@ -37,16 +37,20 @@ export function dockerExecute(input) {
     printCmd(input);
     [
       '── Docker ──',
-      '  docker images · docker ps [-a] · docker pull <镜像:标签>',
-      '  docker build -t <名:标签> . · docker run [-d] [--name 名] [-p 主机:容器] <镜像>',
+      '  docker images [-q] · docker ps [-a] [-q] [--filter 名=值] [--format 模板]',
+      '  docker pull <镜像:标签> · docker history <镜像> · docker stats',
+      '  docker build -t <名:标签> [-f Dockerfile] [--no-cache] .',
+      '  docker run [-d] [--rm] [--name 名] [-p 主机:容器] [-e 键=值] [-v 源:目标] [-w 目录] <镜像>',
       '  docker stop/start/rm <容器> · docker logs <容器> · docker exec -it <容器> <命令>',
       '  docker tag <源> <目标> · docker rmi <镜像> · docker inspect <对象>',
-      '  docker network ls · docker volume ls',
+      '  docker cp <容器>:<路径> <本地>  （反向亦可）',
+      '  docker system prune [-f] · docker system df',
+      '  docker network ls/create/rm · docker volume ls/create/rm',
       '── Compose ──',
       '  docker-compose up -d · docker-compose ps · docker-compose logs · docker-compose down',
       '── SSH / 传输 ──',
       '  ssh <用户>@<主机> [命令]   （会话中 exit 断开）',
-      '  scp <本地文件> <用户>@<主机>:<路径>   （反向亦可）',
+      '  scp [-r] <本地文件> <用户>@<主机>:<路径>   （反向亦可，-r 递归传目录）',
       '  rsync -avz <源> <用户>@<主机>:<目标>',
       '── 其余 ──',
       '  ls · cat · echo · mkdir · grep ... 等 Linux 命令照常可用',
@@ -94,6 +98,10 @@ function parseImageSpec(spec) {
 
 const DOCKER = {
   images: (a, e) => {
+    if (a.includes('-q') || a.includes('--quiet')) {
+      const lines = e.images.map(i => i.id);
+      lines.forEach(l => print(l, 'out')); e.lastOut = lines.join('\n'); after(true); return;
+    }
     const lines = ['REPOSITORY'.padEnd(28) + 'TAG'.padEnd(12) + 'IMAGE ID'.padEnd(14) + 'SIZE'];
     for (const i of e.images) lines.push(`${i.repo.padEnd(28)}${i.tag.padEnd(12)}${i.id.padEnd(14)}${i.size}MB`);
     if (!e.images.length) lines.push('(暂无镜像 —— 用 docker pull 或 docker build 创建)');
@@ -102,10 +110,47 @@ const DOCKER = {
 
   ps: (a, e) => {
     const all = a.includes('-a') || a.includes('--all');
-    const list = all ? e.containers : e.containers.filter(c => c.status === 'running');
+    const quiet = a.includes('-q') || a.includes('--quiet');
+    // --filter key=value（可多次；支持 --filter=x 与 --filter x 两种写法）
+    const filters = [];
+    a.forEach((x, i) => { if (x === '--filter' || x === '-f') filters.push(a[i + 1]); });
+    a.forEach(x => { if (x.startsWith('--filter=')) filters.push(x.slice('--filter='.length)); });
+    // --format 模板
+    let fmt = flagVal(a, '--format');
+    if (fmt === null || fmt === undefined) {
+      const ff = a.find(x => x.startsWith('--format='));
+      if (ff) fmt = ff.slice('--format='.length);
+    }
+    const statusOf = c => c.status === 'running' ? 'Up 2 min' : 'Exited (0)';
+
+    let list = all ? e.containers : e.containers.filter(c => c.status === 'running');
+    for (const f of filters) {
+      if (!f) continue;
+      const eq = f.indexOf('=');
+      if (eq < 0) continue;
+      const key = f.slice(0, eq).trim(), val = f.slice(eq + 1).trim();
+      if (key === 'name') list = list.filter(c => c.name.includes(val));
+      else if (key === 'status') list = list.filter(c => c.status === val);
+      else if (key === 'id') list = list.filter(c => c.id.startsWith(val));
+      else if (key === 'ancestor' || key === 'image') list = list.filter(c => c.image.includes(val));
+    }
+
+    if (quiet) {
+      const lines = list.map(c => c.id);
+      lines.forEach(l => print(l, 'out')); e.lastOut = lines.join('\n'); after(true); return;
+    }
+    if (fmt) {
+      const lines = list.map(c => fmt
+        .replace(/\{\{\s*\.ID\s*\}\}/g, c.id)
+        .replace(/\{\{\s*\.Names?\s*\}\}/g, c.name)
+        .replace(/\{\{\s*\.Status\s*\}\}/g, statusOf(c))
+        .replace(/\{\{\s*\.Image\s*\}\}/g, c.image)
+        .replace(/\{\{\s*\.Ports\s*\}\}/g, c.ports.join(',') || '-'));
+      lines.forEach(l => print(l, 'out')); e.lastOut = lines.join('\n'); after(true); return;
+    }
     const lines = ['CONTAINER ID'.padEnd(14) + 'IMAGE'.padEnd(22) + 'STATUS'.padEnd(12) + 'PORTS'.padEnd(16) + 'NAMES'];
     for (const c of list) {
-      const st = c.status === 'running' ? 'Up 2 min' : 'Exited (0)';
+      const st = statusOf(c);
       lines.push(`${c.id.padEnd(14)}${c.image.padEnd(22)}${st.padEnd(12)}${(c.ports.join(',') || '-').padEnd(16)}${c.name}`);
     }
     if (!list.length) lines.push(all ? '(没有任何容器)' : '(没有运行中的容器 —— docker ps -a 查看全部)');
@@ -128,9 +173,17 @@ const DOCKER = {
 
   build: (a, e) => {
     const tagSpec = flagVal(a, '-t') || flagVal(a, '--tag');
-    if (!tagSpec) return err('用法: docker build -t <名称:标签> .', e);
-    const dir = a[a.length - 1] === '.' ? e.cwd : a[a.length - 1];
-    const dfPath = (dir === e.cwd ? '' : dir + '/') + 'Dockerfile';
+    if (!tagSpec) return err('用法: docker build -t <名称:标签> [-f Dockerfile] .', e);
+    const noCache = a.includes('--no-cache');
+    const dockerfile = flagVal(a, '-f') || flagVal(a, '--file');
+    // 上下文目录 = 最后一个位置参数（排除带值 flag 的值）
+    const valueFlags = ['-t', '--tag', '-f', '--file'];
+    const valueIdx = new Set();
+    a.forEach((x, i) => { if (valueFlags.includes(x)) valueIdx.add(i + 1); });
+    const positional = a.filter((x, i) => !x.startsWith('-') && !valueIdx.has(i));
+    const ctx = positional[positional.length - 1] || '.';
+    const dir = ctx === '.' ? e.cwd : ctx;
+    const dfPath = dockerfile || (dir === e.cwd ? '' : dir + '/') + 'Dockerfile';
     const r = e.readFile(dfPath);
     if (r.err) { sfx('err-file'); print(`unable to prepare context: path "${dfPath}" not found`, 'err'); after(false); return; }
     const lines = r.content.split('\n').map(l => l.trim()).filter(l => l && !l.startsWith('#'));
@@ -148,6 +201,7 @@ const DOCKER = {
     const { repo, tag } = parseImageSpec(tagSpec);
     const base = layers[0].split(/\s+/)[1];
     sfx('docker-build');
+    if (noCache) print(`Sending build context to Docker daemon (--no-cache：不使用缓存)`, 'dim');
     layers.forEach((l, i) => print(`Step ${i + 1}/${layers.length} : ${l}`, 'dim'));
     e.addImage(repo, tag, layers, base);
     print(`Successfully built ${e.findImage(`${repo}:${tag}`).id}`, 'ok');
@@ -158,14 +212,36 @@ const DOCKER = {
 
   run: (a, e) => {
     const name = flagVal(a, '--name');
-    const ports = [];
-    a.forEach((x, i) => { if (x === '-p' || x === '--publish') ports.push(a[i + 1]); });
+    const ports = [], envs = [], mounts = [];
+    let workdir = null, network = null;
+    a.forEach((x, i) => {
+      if (x === '-p' || x === '--publish') ports.push(a[i + 1]);
+      else if (x === '-e' || x === '--env') envs.push(a[i + 1]);
+      else if (x === '-v' || x === '--volume') mounts.push(a[i + 1]);
+      else if (x === '-w' || x === '--workdir') workdir = a[i + 1];
+      else if (x === '--network') network = a[i + 1];
+    });
     const detach = a.includes('-d') || a.includes('--detach');
-    const spec = a.filter((x, i) => !x.startsWith('-') && x !== name && !ports.includes(x) && a[i - 1] !== '--name' && a[i - 1] !== '-p' && a[i - 1] !== '--publish')[0];
-    if (!spec) return err('用法: docker run [-d] [--name 名称] [-p 主机:容器] <镜像> [命令]', e);
+    const autoRemove = a.includes('--rm');
+    // 镜像名 = 第一个「非 flag 且不是带值 flag 的值」的参数
+    const valueFlags = ['--name', '-p', '--publish', '-e', '--env', '-v', '--volume', '-w', '--workdir', '--network'];
+    const valueIdx = new Set();
+    a.forEach((x, i) => { if (valueFlags.includes(x)) valueIdx.add(i + 1); });
+    const spec = a.filter((x, i) => !x.startsWith('-') && !valueIdx.has(i))[0];
+    if (!spec) return err('用法: docker run [-d] [--rm] [--name 名称] [-p 主机:容器] [-e 键=值] [-v 源:目标] [-w 目录] <镜像> [命令]', e);
     const img = e.findImage(spec);
     if (!img) { sfx('err-network'); print(`Unable to find image '${spec}' locally (先 docker pull ${spec})`, 'err'); after(false); return; }
-    const c = e.createContainer(img, name, { ports });
+    const env = {};
+    for (const kv of envs) {
+      if (!kv) continue;
+      const eq = kv.indexOf('=');
+      env[eq < 0 ? kv : kv.slice(0, eq)] = eq < 0 ? '' : kv.slice(eq + 1);
+    }
+    const mountObjs = mounts.filter(Boolean).map(m => {
+      const ci = m.indexOf(':');
+      return ci < 0 ? { source: m, target: m } : { source: m.slice(0, ci), target: m.slice(ci + 1) };
+    });
+    const c = e.createContainer(img, name, { ports, env, mounts: mountObjs, workdir, network, autoRemove });
     sfx('docker-start');
     print(detach ? c.id : `${c.name} 已启动（前台模式按 Ctrl+C 退出）`, 'ok');
     if (!detach) print(`[${c.name}] ${c.logs[c.logs.length - 1]}`, 'dim');
@@ -239,7 +315,11 @@ const DOCKER = {
     const key = a[0] || '';
     const c = e.findContainer(key);
     const img = !c && e.findImage(key);
-    const obj = c ? { Id: c.id, Name: c.name, Image: c.image, State: { Status: c.status }, Ports: c.ports }
+    const obj = c ? {
+      Id: c.id, Name: c.name, Image: c.image, State: { Status: c.status }, Ports: c.ports,
+      Env: c.env || {}, Mounts: c.mounts || [], Workdir: c.workdir || '/',
+      NetworkMode: c.network || 'bridge', AutoRemove: !!c.autoRemove,
+    }
       : img ? { Id: img.id, RepoTags: [`${img.repo}:${img.tag}`], Layers: img.layers } : null;
     if (!obj) return err(`Error: No such object: ${key}`, e, 'err-network');
     const s = JSON.stringify(obj, null, 2);
@@ -256,7 +336,17 @@ const DOCKER = {
       e.networks.push({ id: e.nextId(), name: a[1], driver: 'bridge' });
       sfx('net-connect'); print(a[1], 'ok'); after(true); return;
     }
-    print('用法: docker network ls | docker network create <名称>', 'err'); after(false);
+    if (a[0] === 'rm' && a[1]) {
+      const name = a[1];
+      const net = e.networks.find(n => n.name === name);
+      if (!net) return err(`Error: No such network: ${name}`, e, 'err-network');
+      if (e.containers.some(c => c.status === 'running' && (c.network || 'bridge') === name)) {
+        sfx('err-syntax'); print(`Error: network ${name} has active endpoints (正被运行中的容器使用)`, 'err'); after(false); return;
+      }
+      e.networks.splice(e.networks.indexOf(net), 1);
+      sfx('net-connect'); print(name, 'ok'); after(true); return;
+    }
+    print('用法: docker network ls | docker network create <名称> | docker network rm <名称>', 'err'); after(false);
   },
 
   volume: (a, e) => {
@@ -270,7 +360,110 @@ const DOCKER = {
       e.volumes.push({ id: e.nextId(), name: a[1], mountpoint: `/var/lib/docker/volumes/${a[1]}` });
       sfx('file-create'); print(a[1], 'ok'); after(true); return;
     }
-    print('用法: docker volume ls | docker volume create <名称>', 'err'); after(false);
+    if (a[0] === 'rm' && a[1]) {
+      const name = a[1];
+      const vol = e.volumes.find(v => v.name === name);
+      if (!vol) return err(`Error: No such volume: ${name}`, e, 'err-network');
+      if (e.containers.some(c => c.status === 'running' && (c.mounts || []).some(m => m.source === name))) {
+        sfx('err-syntax'); print(`Error: volume ${name} is in use by a running container (正被运行中的容器挂载)`, 'err'); after(false); return;
+      }
+      e.volumes.splice(e.volumes.indexOf(vol), 1);
+      sfx('file-delete'); print(name, 'ok'); after(true); return;
+    }
+    print('用法: docker volume ls | docker volume create <名称> | docker volume rm <名称>', 'err'); after(false);
+  },
+
+  system: (a, e) => {
+    if (a[0] === 'prune') {
+      const force = a.includes('-f') || a.includes('--force');
+      const stopped = e.containers.filter(c => c.status === 'exited');
+      const referenced = new Set(e.containers.filter(c => c.status !== 'exited').map(c => c.image));
+      const dangling = e.images.filter(i => !referenced.has(`${i.repo}:${i.tag}`));
+      if (!force) {
+        print('WARNING! This will remove:', 'warn');
+        print(`  - ${stopped.length} 个已停止的容器`, 'dim');
+        print(`  - ${dangling.length} 个悬空镜像（没有被任何容器引用）`, 'dim');
+        print('加 -f 确认执行：docker system prune -f', 'info');
+        e.lastOut = 'prune preview'; after(false); return;
+      }
+      let reclaimed = 0;
+      for (const c of stopped) e.containers.splice(e.containers.indexOf(c), 1);
+      for (const i of dangling) { reclaimed += i.size; e.images.splice(e.images.indexOf(i), 1); }
+      sfx('docker-stop');
+      print(`Deleted ${stopped.length} stopped container(s), ${dangling.length} dangling image(s).`, 'ok');
+      print(`Total reclaimed space: ${reclaimed}MB`, 'ok');
+      e.lastOut = `reclaimed ${reclaimed}MB`; after(true); return;
+    }
+    if (a[0] === 'df') {
+      const lines = ['TYPE'.padEnd(12) + 'TOTAL'.padEnd(10) + 'SIZE'];
+      const imgSize = e.images.reduce((s, i) => s + i.size, 0);
+      lines.push(`${'Images'.padEnd(12)}${String(e.images.length).padEnd(10)}${imgSize}MB`);
+      lines.push(`${'Containers'.padEnd(12)}${String(e.containers.length).padEnd(10)}${e.containers.length * 3}MB`);
+      lines.forEach(l => print(l, 'out')); e.lastOut = lines.join('\n'); after(true); return;
+    }
+    print('用法: docker system prune [-f] | docker system df', 'err'); after(false);
+  },
+
+  stats: (a, e) => {
+    const running = e.containers.filter(c => c.status === 'running');
+    const lines = ['CONTAINER ID'.padEnd(14) + 'NAME'.padEnd(16) + 'CPU %'.padEnd(10) + 'MEM USAGE / LIMIT'.padEnd(22) + 'MEM %'.padEnd(10) + 'PIDS'];
+    for (const c of running) {
+      let h = 0; for (const ch of c.id + c.name) h = (h * 31 + ch.charCodeAt(0)) % 997;
+      const cpu = ((h % 400) / 10 + 0.3).toFixed(2);
+      const memMb = (h % 380) + 24;
+      const memPct = ((h % 29) / 10 + 0.4).toFixed(2);
+      const pids = (h % 18) + 2;
+      lines.push(`${c.id.padEnd(14)}${c.name.padEnd(16)}${cpu.padEnd(10)}${(memMb + 'MiB / 2GiB').padEnd(22)}${memPct.padEnd(10)}${pids}`);
+    }
+    if (!running.length) lines.push('(没有运行中的容器)');
+    lines.forEach(l => print(l, 'out')); e.lastOut = lines.join('\n'); after(true);
+  },
+
+  history: (a, e) => {
+    const spec = a.filter(x => !x.startsWith('-'))[0];
+    if (!spec) return err('用法: docker history <镜像:标签>', e);
+    const img = e.findImage(spec);
+    if (!img) return err(`Error: No such image: ${spec}`, e, 'err-network');
+    const lines = ['IMAGE'.padEnd(14) + 'CREATED BY'.padEnd(42) + 'SIZE'];
+    const rev = img.layers.slice().reverse();
+    rev.forEach((l, i) => {
+      const id = i === 0 ? img.id : '<missing>';
+      lines.push(`${id.padEnd(14)}${l.padEnd(42)}${(l.length * 3 + 7)}B`);
+    });
+    lines.forEach(l => print(l, 'out')); e.lastOut = lines.join('\n'); after(true);
+  },
+
+  cp: (a, e) => {
+    const pos = a.filter(x => !x.startsWith('-'));
+    const [src, dst] = pos;
+    if (!src || !dst) return err('用法: docker cp <容器>:<路径> <本地>  （或反向）', e);
+    const parseSpec = s => {
+      const i = s.indexOf(':');
+      return i < 0 ? { ctr: null, path: s } : { ctr: s.slice(0, i), path: s.slice(i + 1) };
+    };
+    const S = parseSpec(src), D = parseSpec(dst);
+    if (S.ctr && !D.ctr) {
+      // 容器 → 本地
+      const c = e.findContainer(S.ctr);
+      if (!c) return err(`Error: No such container: ${S.ctr}`, e, 'err-network');
+      c.files = c.files || {};
+      const content = c.files[S.path] !== undefined ? c.files[S.path] : `(模拟内容：来自 ${c.name} 的 ${S.path})\n`;
+      const localPath = e.isDir(dst) ? dst.replace(/\/$/, '') + '/' + e.basename(S.path) : dst;
+      e.writeFile(localPath, content);
+      sfx('file-copy'); print(`Successfully copied ${localPath}`, 'ok'); e.lastOut = localPath; after(true); return;
+    }
+    if (D.ctr && !S.ctr) {
+      // 本地 → 容器
+      const c = e.findContainer(D.ctr);
+      if (!c) return err(`Error: No such container: ${D.ctr}`, e, 'err-network');
+      const r = e.readFile(src);
+      if (r.err) return err(`Error: lstat ${src}: no such file or directory`, e, 'err-file');
+      c.files = c.files || {};
+      const target = D.path.endsWith('/') ? D.path + e.basename(e.resolvePath(src)) : D.path;
+      c.files[target] = r.content;
+      sfx('file-copy'); print(`Successfully copied ${src} → ${c.name}:${target}`, 'ok'); e.lastOut = target; after(true); return;
+    }
+    return err('用法: docker cp <容器>:<路径> <本地>  （只能有一端是容器）', e);
   },
 };
 
@@ -398,21 +591,47 @@ function runRemote(input, base, e) {
   }
 
   if (base === 'scp') {
+    const recursive = t.includes('-r');
     const args = t.slice(1).filter(x => !x.startsWith('-'));
-    if (args.length < 2) { print('用法: scp <本地文件> <用户>@<主机>:<远程路径>  （或反向）', 'err'); sfx('err-syntax'); after(false); return; }
+    if (args.length < 2) { print('用法: scp [-r] <本地文件> <用户>@<主机>:<远程路径>  （或反向）', 'err'); sfx('err-syntax'); after(false); return; }
     const [src, dst] = args;
     sfx('ssh-transfer');
     if (dst.includes('@') && dst.includes(':')) {
       // 本地 → 远程
-      const r = e.readFile(src);
-      if (r.err) { sfx('err-file'); print(`scp: ${src}: No such file or directory`, 'err'); after(false); return; }
       const [tgt, path] = dst.split(':');
       const remotePath = path || '/home/user/';
-      const finalPath = e.remote.isDir(remotePath) ? remotePath.replace(/\/$/, '') + '/' + e.basename(e.resolvePath(src)) : remotePath;
-      e.remote.writeFile(finalPath, r.content);
-      print(`${src}  100%  ${r.content.length}B  1.2MB/s  00:00`, 'out');
-      print(`已传输到 ${tgt.split('@')[1]}:${finalPath}`, 'ok');
-      e.lastOut = finalPath;
+      if (recursive && e.isDir(src)) {
+        const baseName = e.basename(e.resolvePath(src));
+        const files = e.walk(src);
+        const remoteBase = remotePath.replace(/\/$/, '');
+        // 远端 mkdir -p：确保目标目录存在
+        const mkdirp = p => {
+          const segs = e.remote.resolvePath(p).split('/').filter(Boolean);
+          let cur = '';
+          for (const s of segs) { cur += '/' + s; if (!e.remote.isDir(cur)) e.remote.mkdir(cur); }
+        };
+        let count = 0, total = 0;
+        for (const rel of files) {
+          const r = e.readFile(src + '/' + rel);
+          if (r.ok) {
+            const target = remoteBase + '/' + baseName + '/' + rel;
+            mkdirp(e.remote.dirname(target));
+            e.remote.writeFile(target, r.content);
+            count++; total += r.content.length;
+          }
+        }
+        print(`${src}/  100%  ${total}B  ${count} 个文件  1.2MB/s  00:00`, 'out');
+        print(`已传输到 ${tgt.split('@')[1]}:${remoteBase}/${baseName}/（${count} 个文件）`, 'ok');
+        e.lastOut = remoteBase + '/' + baseName;
+      } else {
+        const r = e.readFile(src);
+        if (r.err) { sfx('err-file'); print(`scp: ${src}: No such file or directory`, 'err'); after(false); return; }
+        const finalPath = e.remote.isDir(remotePath) ? remotePath.replace(/\/$/, '') + '/' + e.basename(e.resolvePath(src)) : remotePath;
+        e.remote.writeFile(finalPath, r.content);
+        print(`${src}  100%  ${r.content.length}B  1.2MB/s  00:00`, 'out');
+        print(`已传输到 ${tgt.split('@')[1]}:${finalPath}`, 'ok');
+        e.lastOut = finalPath;
+      }
     } else if (src.includes('@') && src.includes(':')) {
       // 远程 → 本地
       const [tgt, path] = src.split(':');

@@ -173,6 +173,47 @@ export const ACHIEVEMENTS = [
     id: 'helmsman', icon: '☸', title: '集群舵手', desc: '通关 Kubernetes 模块全部关卡',
     check: c => moduleCleared(c.levelStars, 'k8s'),
   },
+  /* ── 命令全面增强：新增成就 ── */
+  {
+    id: 'json-juggler', icon: '🤹', title: 'JSON 杂技师', desc: '用 jq 解析过 JSON 数据',
+    check: c => (c.cmdUsage['jq'] || 0) > 0,
+  },
+  {
+    id: 'route-reader', icon: '🗺️', title: '路由读图员', desc: '用 arp 或 route 查看过路由与邻居表',
+    check: c => (c.cmdUsage['arp'] || 0) > 0 || (c.cmdUsage['route'] || 0) > 0,
+  },
+  {
+    id: 'disk-jockey', icon: '💽', title: '磁盘骑手', desc: '用 dd 写入过磁盘镜像',
+    check: c => (c.cmdUsage['dd'] || 0) > 0,
+  },
+  {
+    id: 'filesystem-forger', icon: '🧱', title: '文件系统锻造师', desc: '用 mkfs 创建过文件系统',
+    check: c => (c.cmdUsage['mkfs'] || 0) > 0,
+  },
+  {
+    id: 'file-anatomist', icon: '🔬', title: '文件解剖师', desc: '用 stat 或 which 查看过文件与命令详情',
+    check: c => (c.cmdUsage['stat'] || 0) > 0 || (c.cmdUsage['which'] || 0) > 0,
+  },
+  {
+    id: 'xargs-wrangler', icon: '🧲', title: '参数搬运工', desc: '用 xargs 批量处理过命令参数',
+    check: c => (c.cmdUsage['xargs'] || 0) > 0,
+  },
+  {
+    id: 'push-pioneer', icon: '🚀', title: '推送先锋', desc: '用 git push 推送到远程仓库',
+    check: c => (c.cmdUsage['git push'] || 0) > 0,
+  },
+  {
+    id: 'clone-ranger', icon: '🧬', title: '克隆游侠', desc: '用 git clone 克隆过远程仓库',
+    check: c => (c.cmdUsage['git clone'] || 0) > 0,
+  },
+  {
+    id: 'insight-reader', icon: '📊', title: '图谱洞察者', desc: '通关「洞察」阶段全部关卡',
+    check: c => stageCleared(c.levelStars, '07 洞察'),
+  },
+  {
+    id: 'remote-commander', icon: '📡', title: '远程指挥官', desc: '通关「远程」阶段全部关卡',
+    check: c => stageCleared(c.levelStars, '09 远程'),
+  },
 ];
 
 // 根据当前进度计算已解锁的成就 id 列表

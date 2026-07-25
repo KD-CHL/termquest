@@ -111,4 +111,75 @@ export const TEXT_LEVELS = [
     check(e) { return e.used.has('grep') && e.used.has('awk') && e.used.has('uniq') && e.lastOut.includes('beijing'); },
     done: 'grep 过滤 → awk 提列 → sort 排序 → uniq 计数——文本管道四连击，数据分析信手拈来。恭喜通关！🎓'
   },
+
+  /* ============ 06 进阶工具箱 ============ */
+  {
+    stage: '06 进阶工具箱', id: 'T11', title: 'find 忽略大小写与深度限制', par: 2,
+    desc: '日志文件散落各处，扩展名大小写不一（<code>ERROR.LOG</code>、<code>app.log</code>……）。先用 <code>find . -iname "*.log"</code> 忽略大小写找出全部日志，再用 <code>find . -maxdepth 1 -iname "*.log"</code> 只找当前目录第一层。',
+    hints: ['find . -iname "*.log"', 'find . -maxdepth 1 -iname "*.log"'],
+    setup(e) {
+      seed(e);
+      e.mkdir('/home/user/logs');
+      e.mkdir('/home/user/logs/old');
+      e.writeFile('/home/user/ERROR.LOG', 'boom\n');
+      e.writeFile('/home/user/logs/app.log', 'ok\n');
+      e.writeFile('/home/user/logs/old/db.log', 'ok\n');
+    },
+    check(e) { return e.used.has('find') && e.lastOut.includes('ERROR.LOG') && !e.lastOut.includes('app.log'); },
+    done: '-iname 忽略大小写，-maxdepth N 限制搜索深度——find 的搜索范围从此收放自如。'
+  },
+  {
+    stage: '06 进阶工具箱', id: 'T12', title: 'find -delete 一键清理', par: 3,
+    desc: '目录里留着 3 个 <code>.bak</code> 备份文件。先用 <code>find . -name "*.bak"</code> 确认目标，再用 <code>find . -name "*.bak" -delete</code> 一次性删除，最后 <code>ls</code> 确认干净了。',
+    hints: ['find . -name "*.bak"', 'find . -name "*.bak" -delete', 'ls'],
+    setup(e) {
+      seed(e);
+      ['old', 'backup', 'copy'].forEach(n => e.writeFile(`/home/user/${n}.bak`, 'stale\n'));
+    },
+    check(e) { return e.used.has('find') && !e.exists('old.bak') && !e.exists('backup.bak') && !e.exists('copy.bak'); },
+    done: '-delete 让 find 从"查找器"升级为"终结者"：匹配即删除，无需再管道给 xargs rm。'
+  },
+  {
+    stage: '06 进阶工具箱', id: 'T13', title: 'awk -v + BEGIN 生成报表', par: 2,
+    desc: '用 <code>-v</code> 传入变量、<code>BEGIN</code> 块打印表头、<code>printf</code> 控制格式，把 <code>people.csv</code> 渲染成一份小报表：<code>awk -F, -v title=AgeReport \'BEGIN {printf "== %s ==\\n", title} {printf "%s is %d years old\\n", $1, $2}\' people.csv</code>。',
+    hints: ['cat people.csv', 'awk -F, -v title=AgeReport \'BEGIN {printf "== %s ==\\n", title} {printf "%s is %d years old\\n", $1, $2}\' people.csv'],
+    setup(e) { seed(e); },
+    check(e) { return e.used.has('awk') && e.lastOut.includes('== AgeReport ==') && e.lastOut.includes('alice is 30') && e.lastOut.includes('dave is 22'); },
+    done: '-v 注入变量、BEGIN 先输出表头、printf 精确排版——awk 三件套齐活，报表生成不过一行命令。'
+  },
+  {
+    stage: '06 进阶工具箱', id: 'T14', title: 'sed 插入与追加行', par: 3,
+    desc: '给 <code>config.txt</code> 动个小手术：用 <code>sed -i \'1a\\# version 2\' config.txt</code> 在第 1 行后追加注释，再用 <code>sed -i \'/timeout/a\\retries=3\' config.txt</code> 在 timeout 行后补上重试配置，最后 <code>cat config.txt</code> 验收。',
+    hints: ['sed -i \'1a\\# version 2\' config.txt', 'sed -i \'/timeout/a\\retries=3\' config.txt', 'cat config.txt'],
+    setup(e) { seed(e); },
+    check(e) {
+      const r = e.readFile('config.txt');
+      return e.used.has('sed') && r.ok && r.content.includes('# version 2') && r.content.includes('retries=3')
+        && r.content.indexOf('retries=3') > r.content.indexOf('timeout=30') && r.content.includes('port=8080');
+    },
+    done: 'Na\\ 在第 N 行后追加，/正则/i\\ 在匹配行前插入——sed 不仅能删改，还能精准"加塞"。'
+  },
+  {
+    stage: '06 进阶工具箱', id: 'T15', title: 'jq 解析 JSON', par: 3,
+    desc: '<code>users.json</code> 里存着团队信息。用 <code>jq .members users.json</code> 取出成员数组，再用 <code>jq .members[0].name users.json</code> 精确拿到第一位成员的名字。',
+    hints: ['cat users.json', 'jq .members users.json', 'jq .members[0].name users.json'],
+    setup(e) {
+      seed(e);
+      e.writeFile('/home/user/users.json', '{\n  "team": "platform",\n  "members": [\n    { "name": "alice", "age": 30 },\n    { "name": "bob", "age": 25 }\n  ]\n}\n');
+    },
+    check(e) { return e.used.has('jq') && e.lastOut.includes('alice') && !e.lastOut.includes('bob'); },
+    done: 'jq 是命令行世界的 JSON 手术刀：.key 逐层深入、.[] 迭代、.[N] 索引，结构化数据尽在掌握。'
+  },
+  {
+    stage: '06 进阶工具箱', id: 'T16', title: 'diff -u 统一格式对比', par: 2,
+    desc: '计划表改了一版。先 <code>diff plan-old.txt plan-new.txt</code> 看普通差异，再 <code>diff -u plan-old.txt plan-new.txt</code> 生成带 <code>---/+++/@@</code> 标记的统一格式 diff（git diff 的同款风格）。',
+    hints: ['diff plan-old.txt plan-new.txt', 'diff -u plan-old.txt plan-new.txt'],
+    setup(e) {
+      seed(e);
+      e.writeFile('/home/user/plan-old.txt', 'monday: meeting\nwednesday: review\nfriday: demo\n');
+      e.writeFile('/home/user/plan-new.txt', 'monday: meeting\ntuesday: coding\nwednesday: review\nfriday: demo\n');
+    },
+    check(e) { return e.used.has('diff') && e.lastOut.includes('--- a/') && e.lastOut.includes('+++ b/') && e.lastOut.includes('@@') && e.lastOut.includes('+tuesday: coding'); },
+    done: 'diff -u 输出带上下文的统一格式，---/+++/@@ 就是 git diff 的底层语言。看懂它，review 不再迷路。'
+  },
 ];

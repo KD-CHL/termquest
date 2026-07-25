@@ -8,7 +8,7 @@
 
 **线上体验：https://termquest-chls-projects-ddde4200.vercel.app**
 
-在浏览器里通过**模拟终端**学习命令行——敲真实命令完成 103 个关卡，覆盖 Git、Linux、Shell 脚本、Docker 运维、网络工具、文本处理、系统管理、Vim、数据库与 Kubernetes 十大模块。内置用户登录、排行榜、成就徽章、个人统计面板，并支持 GitHub 账号登录。
+在浏览器里通过**模拟终端**学习命令行——敲真实命令完成 148 个关卡，覆盖 Git、Linux、Shell 脚本、Docker 运维、网络工具、文本处理、系统管理、Vim、数据库与 Kubernetes 十大模块。内置用户登录、排行榜、成就徽章、个人统计面板，并支持 GitHub 账号登录。
 
 ### 账号说明
 
@@ -30,7 +30,7 @@
 
 ![注册页](game/docs/screenshots/signup.png)
 
-**游戏主页** — 17 个关卡按阶段分组，顶部显示星星进度、排行榜、个人统计和成就墙：
+**游戏主页** — 148 个关卡按阶段分组，顶部显示星星进度、排行榜、个人统计和成就墙：
 
 ![游戏主页](game/docs/screenshots/game.png)
 

@@ -1,5 +1,7 @@
 // VimEngine —— 继承 LinuxEngine（文件存储），叠加 vim 模态编辑状态
-// vim 状态：null = 未打开；否则 { file, lines[], row, col, mode, yank[], modified, number, search }
+// vim 状态：null = 未打开；否则 { file, lines[], row, col, mode, yank[], modified, number, search,
+//   undo[]（修改前快照栈，u 撤销）, savedLines[]（上次保存的内容，供撤销后判定 modified）,
+//   insertCol（cw/c$/s 行内续写的插入列，null = 整行输入模式） }
 import { LinuxEngine } from './linux-engine.js';
 
 export class VimEngine extends LinuxEngine {
@@ -31,6 +33,9 @@ export class VimEngine extends LinuxEngine {
       number: false,        // :set number
       search: null,
       msg: '',              // 底部消息
+      undo: [],             // 修改前快照栈（u 撤销），上限 100
+      savedLines: lines.slice(), // 上次保存时的内容（判定 modified）
+      insertCol: null,      // cw/c$/s 后行内续写的列；null = 整行输入模式
     };
     return this.vim;
   }
@@ -42,6 +47,28 @@ export class VimEngine extends LinuxEngine {
     if (!this.vim) return;
     this.writeFile(this.vim.file, this.vim.lines.join('\n') + '\n');
     this.vim.modified = false;
+    this.vim.savedLines = this.vim.lines.slice();
+  }
+
+  // 在任何修改操作前推入快照（lines + 光标），上限 100 条
+  pushUndo() {
+    const v = this.vim;
+    if (!v) return;
+    v.undo.push({ lines: v.lines.slice(), row: v.row, col: v.col });
+    if (v.undo.length > 100) v.undo.shift();
+  }
+
+  // u —— 弹出最近快照并恢复；成功返回 true，栈空返回 false
+  undoVim() {
+    const v = this.vim;
+    if (!v || !v.undo.length) return false;
+    const snap = v.undo.pop();
+    v.lines = snap.lines;
+    v.row = snap.row;
+    v.col = snap.col;
+    v.modified = v.lines.join('\n') !== (v.savedLines || v.lines).join('\n');
+    this.clampCursor();
+    return true;
   }
 
   curLine() { return this.vim.lines[this.vim.row] || ''; }

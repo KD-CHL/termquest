@@ -10,9 +10,9 @@ export class K8sEngine extends LinuxEngine {
       { name: 'node-2', status: 'Ready', roles: 'worker', cpu: '8', mem: '32Gi', ver: 'v1.29.0' },
     ];
     this.namespaces = ['default', 'kube-system'];
-    this.pods = [];         // { name, namespace, status, image, node, restarts, ready, logs: [], owner }
+    this.pods = [];         // { name, namespace, status, image, node, ip, restarts, ready, logs: [], owner, labels }
     this.deployments = [];  // { name, namespace, replicas, image, labels }
-    this.services = [];     // { name, namespace, type, clusterIp, port, targetPort, selector }
+    this.services = [];     // { name, namespace, type, clusterIp, port, targetPort, selector, labels }
     this._podSeq = 0;
     this._seedCluster();
   }
@@ -44,31 +44,37 @@ export class K8sEngine extends LinuxEngine {
     const suffix = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'][this._podSeq % 8];
     return `${owner}-${this._hex(++this._podSeq)}-${suffix}${this._podSeq}`;
   }
-  createPod(owner, image, ns = 'default', status = 'Running') {
+  createPod(owner, image, ns = 'default', status = 'Running', labels = null, name = null) {
+    const podName = name || this._podName(owner || 'pod');
+    if (name) this._podSeq++; // 显式命名（kubectl run）也推进序号，保证 ip 不重复
+    const nodeIdx = this._podSeq % this.nodes.length;
     const pod = {
-      name: this._podName(owner),
+      name: podName,
       namespace: ns,
       status,
       image,
-      node: this.nodes[this._podSeq % this.nodes.length].name,
+      node: this.nodes[nodeIdx].name,
+      ip: `10.244.${nodeIdx}.${(this._podSeq % 250) + 2}`,
       restarts: status === 'Running' ? 0 : 3,
       ready: status === 'Running' ? '1/1' : '0/1',
       logs: status === 'Running'
         ? [`INFO ${image} started`, 'INFO listening on :80']
         : ['INFO starting...', 'ERROR config not found', 'FATAL exit code 1'],
-      owner,
+      owner: owner || null,
+      labels: labels || (owner ? { app: owner } : {}),
     };
     this.pods.push(pod);
     return pod;
   }
 
-  createDeployment(name, image, replicas = 1, ns = 'default') {
+  createDeployment(name, image, replicas = 1, ns = 'default', labels = null) {
     let d = this.findDeployment(name, ns);
     if (!d) {
-      d = { name, namespace: ns, replicas, image, labels: { app: name } };
+      d = { name, namespace: ns, replicas, image, labels: labels ? { app: name, ...labels } : { app: name } };
       this.deployments.push(d);
     } else {
       d.replicas = replicas; d.image = image;
+      if (labels) d.labels = { ...d.labels, ...labels };
     }
     this._reconcile(d);
     return d;
@@ -77,7 +83,7 @@ export class K8sEngine extends LinuxEngine {
   // 让 Pod 数量与 Deployment 期望副本数一致
   _reconcile(d) {
     const cur = this.podsOfDeployment(d.name, d.namespace);
-    while (cur.length < d.replicas) { cur.push(this.createPod(d.name, d.image, d.namespace)); }
+    while (cur.length < d.replicas) { cur.push(this.createPod(d.name, d.image, d.namespace, 'Running', d.labels)); }
     while (cur.length > d.replicas) {
       const gone = cur.pop();
       this.pods = this.pods.filter(p => p !== gone);
@@ -105,22 +111,54 @@ export class K8sEngine extends LinuxEngine {
     return true;
   }
 
-  createService(name, target, port, type = 'ClusterIP', ns = 'default') {
+  deleteService(key, ns = 'default') {
+    const s = this.findService(key, ns);
+    if (!s) return false;
+    this.services = this.services.filter(x => x !== s);
+    return true;
+  }
+
+  createService(name, target, port, type = 'ClusterIP', ns = 'default', labels = null) {
     let s = this.findService(name, ns);
     if (!s) {
-      s = { name, namespace: ns, type, clusterIp: `10.96.0.${10 + this.services.length}`, port, targetPort: port, selector: target };
+      s = { name, namespace: ns, type, clusterIp: `10.96.0.${10 + this.services.length}`, port, targetPort: port, selector: target, labels: labels ? { app: name, ...labels } : { app: name } };
       this.services.push(s);
+    } else if (labels) {
+      s.labels = { ...(s.labels || {}), ...labels };
     }
     return s;
   }
 
   /* ---- 简易 YAML manifest 解析（kubectl apply -f 用） ---- */
   // 支持 key: value 行：kind / name / image / replicas / port / type / namespace
+  // 支持 labels：缩进的 labels: 块（子行 key: value），或行内 labels: k=v,k2=v2
   parseManifest(text) {
     const obj = {};
+    let labels = null, labelsIndent = -1;
     for (const raw of text.split('\n')) {
-      const m = raw.match(/^\s*([\w-]+)\s*:\s*(.+?)\s*$/);
-      if (m && !m[2].startsWith('#')) obj[m[1].toLowerCase()] = m[2];
+      const indent = raw.match(/^\s*/)[0].length;
+      const m = raw.match(/^\s*([\w-]+)\s*:\s*(.*?)\s*$/);
+      if (!m) continue;
+      // 处于 labels: 块内（更深缩进的行归入 labels）
+      if (labels && indent > labelsIndent) {
+        if (m[2] && !m[2].startsWith('#')) labels[m[1]] = m[2];
+        continue;
+      }
+      labels = null;
+      const key = m[1].toLowerCase();
+      if (key === 'labels') {
+        if (!m[2]) { labels = obj.labels = {}; labelsIndent = indent; }
+        else {
+          obj.labels = {};
+          for (const kv of m[2].split(',')) {
+            const i = kv.indexOf('=');
+            if (i > 0) obj.labels[kv.slice(0, i)] = kv.slice(i + 1);
+            else if (kv) obj.labels[kv] = 'true';
+          }
+        }
+        continue;
+      }
+      if (m[2] && !m[2].startsWith('#')) obj[key] = m[2];
     }
     return obj;
   }

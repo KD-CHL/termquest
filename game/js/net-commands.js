@@ -10,7 +10,7 @@ function E() { return app.engine; }
 function after(mutated) { if (app.afterCommand) app.afterCommand(mutated); }
 function track(name) { app.cmdUsage[name] = (app.cmdUsage[name] || 0) + 1; }
 
-const FREE = ['help', 'clear', 'ls', 'pwd', 'cat', 'whoami', 'hostname', 'uname', 'date', 'history', 'echo', 'wc', 'head', 'tail', 'env'];
+const FREE = ['help', 'clear', 'ls', 'pwd', 'cat', 'whoami', 'hostname', 'uname', 'date', 'history', 'echo', 'wc', 'head', 'tail', 'env', 'arp', 'route', 'whois'];
 
 export function netExecute(input) {
   input = input.trim();
@@ -77,12 +77,38 @@ const NET = {
 
   /* ---- DNS ---- */
   dig: (a, e) => {
+    const short = a.some(x => x.startsWith('+short'));
+    // -x <ip> 反向解析（PTR）
+    const xi = a.indexOf('-x');
+    if (xi >= 0) {
+      const ip = a[xi + 1];
+      if (!ip) return fail('用法: dig -x <IP地址> [+short]');
+      const rev = ip.split('.').reverse().join('.') + '.in-addr.arpa.';
+      const name = e.ptr ? e.ptr[ip] : null;
+      if (!name) {
+        if (short) { e.lastOut = ''; after(true); return; }
+        print(`; <<>> DiG 9.18 <<>> -x ${ip}`, 'out');
+        print(`;; ->>HEADER<<- opcode: QUERY, status: NXDOMAIN, id: 4242`, 'out');
+        print(`;; ANSWER: 0`, 'out');
+        e.lastOut = 'NXDOMAIN'; after(true); return;
+      }
+      const ans = `${rev}  300  IN  PTR  ${name}.`;
+      if (short) { print(`${name}.`, 'out'); e.lastOut = `${name}.`; after(true); return; }
+      const lines = [
+        `; <<>> DiG 9.18 <<>> -x ${ip}`,
+        `;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 4242`,
+        `;; ANSWER SECTION:`,
+        ans,
+        `;; Query time: 12 msec`,
+      ];
+      sfx('text-grep');
+      lines.forEach(l => print(l, 'out')); e.lastOut = ans; after(true); return;
+    }
     const args = a.filter(x => !x.startsWith('+'));
     const domain = args.find(x => !/^(A|MX|NS|CNAME|TXT|ANY)$/.test(x));
     let qtype = args.find(x => /^(A|MX|NS|CNAME|TXT|ANY)$/.test(x)) || 'A';
-    if (!domain) return fail('用法: dig <域名> [A|MX|NS|CNAME]');
+    if (!domain) return fail('用法: dig <域名> [A|MX|NS|CNAME] · dig -x <IP地址>');
     const rec = e.dns[domain];
-    const short = a.some(x => x.startsWith('+short'));
     if (!rec) {
       if (short) { e.lastOut = ''; after(true); return; }
       print(`;; ->>HEADER<<- opcode: QUERY, status: NXDOMAIN, id: 4242`, 'out');
@@ -138,26 +164,61 @@ const NET = {
   /* ---- HTTP ---- */
   curl: (a, e) => {
     const flags = a.filter(x => x.startsWith('-')).join(' ');
-    const url = a.find(x => !x.startsWith('-') && a[a.indexOf(x) - 1] !== '-o' && a[a.indexOf(x) - 1] !== '-X' && a[a.indexOf(x) - 1] !== '-H');
-    if (!url) return fail('用法: curl [-I|-s] [-o 文件] [-X 方法] <URL>');
+    const valFlags = ['-o', '-X', '-H', '-d', '--data', '--request', '--header'];
+    let url = null;
+    for (let i = 0; i < a.length; i++) {
+      const x = a[i];
+      if (x.startsWith('-')) { if (valFlags.includes(x)) i++; continue; }
+      else { url = x; break; }
+    }
+    if (!url) return fail('用法: curl [-I|-s|-L] [-o 文件] [-X 方法] [-H 头部] [-d 数据] <URL>');
     const oi = a.indexOf('-o'); const outFile = oi >= 0 ? a[oi + 1] : null;
+    const xi = a.indexOf('-X'); const method = xi >= 0 && a[xi + 1] ? a[xi + 1].toUpperCase() : null;
+    const di = Math.max(a.indexOf('-d'), a.indexOf('--data'));
+    const data = di >= 0 && a[di + 1] !== undefined ? a[di + 1] : null;
+    const headers = []; a.forEach((x, i) => { if (x === '-H' && a[i + 1]) headers.push(a[i + 1]); });
+    const follow = a.includes('-L') || a.includes('--location');
     const headOnly = a.includes('-I') || a.includes('--head');
-    const resp = e.http[url] || e.http[url.replace(/\/$/, '')];
+    let resp = e.http[url] || e.http[url.replace(/\/$/, '')];
     if (!resp || !e.isUp(new URL(url).hostname)) {
       sfx('net-error'); print(`curl: (7) Failed to connect to ${new URL(url).hostname}: Connection refused`, 'err');
       e.lastOut = ''; after(false); return;
     }
     sfx('net-connect');
+    // -L 跟随重定向（仅当响应带 redirect 字段时）
+    const trail = [];
+    if (follow) {
+      let hops = 0;
+      while (resp && resp.redirect && hops++ < 3) {
+        const target = resp.redirect;
+        trail.push(`* Issue another request to this URL: '${target}'`);
+        const next = e.http[target] || e.http[target.replace(/\/$/, '')];
+        if (!next) break;
+        resp = next;
+      }
+    }
+    // 请求摘要：指定了 -X / -d / -H 时打印（-d 未指定方法时隐含 POST）
+    const effMethod = method || (data !== null ? 'POST' : 'GET');
+    const reqLines = [];
+    if (method || data !== null || headers.length) {
+      const u = new URL(url);
+      reqLines.push(`> ${effMethod} ${u.pathname}${u.search} HTTP/1.1`);
+      reqLines.push(`> Host: ${u.hostname}`);
+      headers.forEach(h => reqLines.push(`> ${h}`));
+      if (data !== null) { reqLines.push(`> Content-Length: ${String(data).length}`); reqLines.push(`* upload: ${data}`); }
+    }
     if (headOnly) {
-      const lines = [`HTTP/1.1 ${resp.status} OK`, `Content-Type: text/html; charset=UTF-8`, `Content-Length: ${resp.body.length}`, `Server: nginx`, ''];
+      const lines = [...reqLines, ...trail, `HTTP/1.1 ${resp.status} OK`, `Content-Type: text/html; charset=UTF-8`, `Content-Length: ${resp.body.length}`, `Server: nginx`, ''];
       lines.forEach(l => print(l, 'out')); e.lastOut = lines.join('\n'); after(true); return;
     }
     if (outFile) {
+      [...reqLines, ...trail].forEach(l => print(l, 'dim'));
       e.writeFile(outFile, resp.body);
       if (!flags.includes('-s')) print(`  % Total    % Received  Xferd  Average Speed\n100  ${resp.body.length}  100  ${resp.body.length}    0     0   2456      0 --:--:-- --:--:--  2456`, 'dim');
       print(`已保存到 ${outFile}`, 'ok'); e.lastOut = resp.body; after(true); return;
     }
-    print(resp.body, 'out'); e.lastOut = resp.body; after(true);
+    const lines = [...reqLines, ...trail, resp.body];
+    lines.forEach(l => print(l, 'out')); e.lastOut = lines.join('\n'); after(true);
   },
 
   wget: (a, e) => {
@@ -235,7 +296,20 @@ const NET = {
     if (sub === 'route' || sub === 'r') {
       e.routes.forEach(l => print(l, 'out')); e.lastOut = e.routes.join('\n'); after(true); return;
     }
-    print('用法: ip addr | ip route', 'info'); after(false);
+    if (sub === 'neigh' || sub === 'neighbor' || sub === 'n') {
+      const lines = (e.arp || []).map(n => `${n.ip} dev ${n.iface} lladdr ${n.mac} STALE`);
+      lines.forEach(l => print(l, 'out')); e.lastOut = lines.join('\n'); after(true); return;
+    }
+    if (sub === 'link' || sub === 'l') {
+      const lines = [];
+      e.interfaces.forEach((it, i) => {
+        const lo = it.name === 'lo';
+        lines.push(`${i + 1}: ${it.name}: <${lo ? 'LOOPBACK' : 'BROADCAST,MULTICAST'},${it.state},LOWER_UP> mtu ${lo ? 65536 : 1500} qdisc ${lo ? 'noqueue' : 'fq_codel'} state ${lo ? 'UNKNOWN' : 'UP'} mode DEFAULT`);
+        lines.push(`    link/${lo ? 'loopback' : 'ether'} ${it.mac} brd ${lo ? '00:00:00:00:00:00' : 'ff:ff:ff:ff:ff:ff'}`);
+      });
+      lines.forEach(l => print(l, 'out')); e.lastOut = lines.join('\n'); after(true); return;
+    }
+    print('用法: ip addr | ip route | ip neigh | ip link', 'info'); after(false);
   },
 
   ifconfig: (a, e) => {
@@ -246,6 +320,74 @@ const NET = {
       lines.push(`        ether ${it.mac}  txqueuelen 1000 (Ethernet)`);
       lines.push('');
     }
+    lines.forEach(l => print(l, 'out')); e.lastOut = lines.join('\n'); after(true);
+  },
+
+  arp: (a, e) => {
+    const numeric = a.includes('-n');
+    const lines = ['Address                  HWtype  HWaddress           Flags Mask            Iface'];
+    for (const n of e.arp || []) {
+      const name = !numeric && e.hosts[n.ip] ? e.hosts[n.ip].hostname : n.ip;
+      lines.push(`${name.padEnd(24)} ether   ${n.mac}   C                     ${n.iface}`);
+    }
+    lines.forEach(l => print(l, 'out')); e.lastOut = lines.join('\n'); after(true);
+  },
+
+  route: (a, e) => {
+    const numeric = a.includes('-n');
+    const rows = [];
+    for (const r of e.routes) {
+      const m = r.match(/^(\S+)(?:\s+via\s+(\S+))?\s+dev\s+(\S+)/);
+      if (!m) continue;
+      const [, dest, gw, iface] = m;
+      let destOut, genmask;
+      if (dest === 'default') { destOut = '0.0.0.0'; genmask = '0.0.0.0'; }
+      else {
+        const [net, bits] = dest.split('/');
+        destOut = net; genmask = prefixToMask(parseInt(bits) || 24);
+      }
+      rows.push({
+        dest: numeric || destOut !== '0.0.0.0' ? destOut : 'default',
+        gw: gw ? (numeric ? gw : (e.hosts[gw]?.hostname || gw)) : '0.0.0.0',
+        genmask, flags: gw ? 'UG' : 'U', iface,
+      });
+    }
+    const lines = ['Kernel IP routing table',
+      'Destination     Gateway         Genmask         Flags Metric Ref    Use Iface'];
+    for (const r of rows) {
+      lines.push(`${r.dest.padEnd(16)}${r.gw.padEnd(16)}${r.genmask.padEnd(16)}${r.flags.padEnd(6)}100    0        0 ${r.iface}`);
+    }
+    lines.forEach(l => print(l, 'out')); e.lastOut = lines.join('\n'); after(true);
+  },
+
+  whois: (a, e) => {
+    const domain = a.find(x => !x.startsWith('-'));
+    if (!domain) return fail('用法: whois <域名>');
+    const rec = e.dns[domain];
+    if (!rec) {
+      print(`No match for "${domain.toUpperCase()}".`, 'out');
+      print(`>>> Last update of whois database: 2026-07-25T10:00:00Z <<<`, 'dim');
+      e.lastOut = 'No match'; after(true); return;
+    }
+    let h = 0; for (const ch of domain) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+    const created = 1995 + (h % 24);
+    const mon = `0${1 + (h % 9)}`, day = `1${h % 9}`;
+    const ns = (rec.NS && rec.NS.length ? rec.NS : ['ns1.' + domain, 'ns2.' + domain]).map(n => n.toUpperCase());
+    const lines = [
+      `Domain Name: ${domain.toUpperCase()}`,
+      `Registry Domain ID: D${1000000 + (h % 8999999)}-COM`,
+      `Registrar WHOIS Server: whois.termquest-registry.example`,
+      `Registrar: TermQuest Registry, Inc.`,
+      `Registrar IANA ID: 9999`,
+      `Domain Status: clientTransferProhibited https://icann.org/epp#clientTransferProhibited`,
+      `Creation Date: ${created}-${mon}-${day}T04:00:00Z`,
+      `Registry Expiry Date: ${created + 30}-${mon}-${day}T04:00:00Z`,
+      `Updated Date: ${created + 29}-${mon}-${day}T08:12:00Z`,
+      ...ns.map(n => `Name Server: ${n}`),
+      `DNSSEC: ${rec.NS ? 'signedDelegation' : 'unsigned'}`,
+      `>>> Last update of whois database: 2026-07-25T10:00:00Z <<<`,
+    ];
+    sfx('text-grep');
     lines.forEach(l => print(l, 'out')); e.lastOut = lines.join('\n'); after(true);
   },
 
@@ -272,12 +414,20 @@ function btoaSafe(s) {
   try { return btoa(s).replace(/=/g, ''); } catch { return s.split('').map(c => c.charCodeAt(0).toString(36)).join(''); }
 }
 
+// CIDR 前缀长度 -> 点分十进制掩码（route -n 用）
+function prefixToMask(bits) {
+  const mask = bits <= 0 ? 0 : (~0 << (32 - bits)) >>> 0;
+  return [(mask >>> 24) & 255, (mask >>> 16) & 255, (mask >>> 8) & 255, mask & 255].join('.');
+}
+
 function printConns(e, a) {
   const flags = a.filter(x => x.startsWith('-')).join('');
   const lines = ['Netid  State   Recv-Q  Send-Q  Local Address:Port   Peer Address:Port  Process'];
   for (const c of e.connections) {
     if (flags.includes('l') && c.state !== 'LISTEN') continue;
     if (flags.includes('t') && c.proto !== 'tcp') continue;
+    if (flags.includes('u') && c.proto !== 'udp') continue;
+    // -a：显示全部（默认即 LISTEN + 非 LISTEN，无需额外过滤）
     const proc = flags.includes('p') ? `  users:(("${c.proc}",pid=${1000 + c.local.split(':').pop() % 999}))` : '';
     lines.push(`${c.proto}    ${c.state.padEnd(8)}0       0       ${c.local.padEnd(20)} ${c.foreign.padEnd(18)}${proc}`);
   }
@@ -288,14 +438,16 @@ function showNetHelp() {
   ['── 连通性 ──',
     '  ping [-c 次数] <主机> · traceroute <主机>',
     '── DNS ──',
-    '  dig <域名> [A|MX|NS] [+short] · nslookup <域名> · host <域名>',
+    '  dig <域名> [A|MX|NS] [+short] · dig -x <IP> 反向解析 · nslookup <域名> · host <域名>',
+    '  whois <域名>',
     '── HTTP ──',
-    '  curl [-I] [-o 文件] <URL> · wget <URL>',
+    '  curl [-I|-s|-L] [-o 文件] [-X 方法] [-H 头部] [-d 数据] <URL> · wget <URL>',
     '── 端口 / 连接 ──',
     '  nc -zv <主机> <端口> · telnet <主机> [端口]',
-    '  ss [-tlnp] · netstat [-an]',
+    '  ss [-atlnp] · netstat [-an]  （-u 只看 UDP）',
     '── 网络配置 ──',
-    '  ip addr · ip route · ifconfig',
+    '  ip addr · ip route · ip neigh · ip link · ifconfig',
+    '  arp [-n] · route [-n]',
     '── SSH 密钥 ──',
     '  ssh-keygen -t rsa · cat ~/.ssh/id_rsa.pub',
     '── 其余 ──',

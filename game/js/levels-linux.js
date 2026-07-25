@@ -127,4 +127,72 @@ export const LINUX_LEVELS = [
     },
     done: '目录 + 管道 + 重定向 + 后台任务——恭喜，你已经能组合 Linux 命令解决实际问题了！'
   },
+
+  /* ============ 04 进阶探查 ============ */
+  {
+    stage: '04 进阶探查', id: 'L13', title: '隐藏文件', par: 2,
+    desc: '家目录里藏着一个以 <code>.</code> 开头的隐藏文件 <code>.secret</code>，普通 <code>ls</code> 不会显示它。用 <code>ls -la</code> 让隐藏文件现形（<code>-a</code> 显示全部、<code>-l</code> 显示详情）。',
+    hints: ['ls', 'ls -la'],
+    setup(e) {
+      seedHome(e);
+      e.writeFile('/home/user/.secret', 'key=TERMQUEST-2026\n');
+    },
+    check(e) {
+      const listedHidden = e.history.some(h => /^ls\b/.test(h.trim()) && /(^|\s)-[A-Za-z]*a[A-Za-z]*(\s|$)/.test(h));
+      return e.used.has('ls') && (e.lastOut.includes('.secret') || listedHidden);
+    },
+    done: '以 . 开头的文件默认隐藏，ls -a 让它们现形——.bashrc、.ssh 都是这样藏起来的。'
+  },
+  {
+    stage: '04 进阶探查', id: 'L14', title: '递归搜索', par: 2,
+    desc: '标记字符串 <code>NEEDLE</code> 藏在 <code>src/</code> 目录的某个深层文件里。用 <code>grep -r NEEDLE src</code> 递归搜索整个目录树，输出格式为 <code>路径:匹配行</code>。',
+    hints: ['grep -r NEEDLE src'],
+    setup(e) {
+      seedHome(e);
+      e.mkdir('src');
+      e.mkdir('src/util');
+      e.writeFile('src/main.js', 'console.log("hello");\n');
+      e.writeFile('src/util/helper.js', '// todo\nconst token = "NEEDLE-42";\nmodule.exports = token;\n');
+    },
+    check(e) {
+      return e.used.has('grep') && (e.lastOut.includes('src/util/helper.js:') || e.lastOut.includes('NEEDLE'));
+    },
+    done: 'grep -r 递归扫整棵目录树，path:行 的格式让你直接定位到藏关键词的文件。'
+  },
+  {
+    stage: '04 进阶探查', id: 'L15', title: '统计与定位', par: 3,
+    desc: '先用 <code>grep -c ERROR server.log</code> 直接统计错误行数（应输出 2），再用 <code>grep -l is notes.txt</code> 确认哪个文件包含 "is"（只打印文件名）。',
+    hints: ['grep -c ERROR server.log', 'grep -l is notes.txt'],
+    setup(e) { seedHome(e); },
+    check(e) {
+      const o = e.lastOut.trim();
+      const ranC = e.history.some(h => /^grep\s+(-[A-Za-z]*c[A-Za-z]*|--count)(\s|$)/.test(h));
+      const ranL = e.history.some(h => /^grep\s+(-[A-Za-z]*l[A-Za-z]*|--files-with-matches)(\s|$)/.test(h));
+      return e.used.has('grep') && ranC && ranL && (o === '2' || o === 'notes.txt');
+    },
+    done: '-c 直接给计数、-l 只列文件名——配合管道 wc -l 是日志统计的三种姿势。'
+  },
+  {
+    stage: '04 进阶探查', id: 'L16', title: '按列排序', par: 2,
+    desc: '<code>data.csv</code> 是逗号分隔的表格。用 <code>sort -t , -k 2 -n data.csv</code> 按第 2 列（年龄）数值排序：<code>-t</code> 指定分隔符，<code>-k</code> 指定列，<code>-n</code> 按数值比较。',
+    hints: ['sort -t , -k 2 -n data.csv'],
+    setup(e) { seedHome(e); },
+    check(e) {
+      const o = e.lastOut;
+      return e.used.has('sort') && o.includes('bob') && o.includes('alice') && o.includes('carol')
+        && o.indexOf('bob') < o.indexOf('alice') && o.indexOf('alice') < o.indexOf('carol');
+    },
+    done: 'sort -t 定分隔符、-k 选列、-n 按数值——表格排序不再只会按整行字母序。'
+  },
+  {
+    stage: '04 进阶探查', id: 'L17', title: '命令探查组合', par: 4,
+    desc: '① <code>which grep</code> 查命令所在路径；② <code>stat data.csv</code> 查看文件元信息（大小/权限/属主）；③ 用 <code>basename</code> 和 <code>dirname</code> 拆解路径 <code>/home/user/docs/notes.txt</code>。',
+    hints: ['which grep', 'stat data.csv', 'basename /home/user/docs/notes.txt', 'dirname /home/user/docs/notes.txt'],
+    setup(e) { seedHome(e); },
+    check(e) {
+      return e.used.has('which') && e.used.has('stat') && e.used.has('basename') && e.used.has('dirname')
+        && e.lastOut.includes('/home/user/docs');
+    },
+    done: 'which 找命令、stat 看元数据、basename/dirname 拆路径——写脚本自动拼路径的常用组合。'
+  },
 ];

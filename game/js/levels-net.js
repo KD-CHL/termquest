@@ -92,4 +92,38 @@ export const NET_LEVELS = [
     },
     done: '生成密钥 → 查公钥 → 确认网络 → 验证服务——一套完整的上线前自检流程。恭喜，网络工具模块全部通关！🎓'
   },
+
+  /* ============ 06 网络进阶 ============ */
+  {
+    stage: '06 网络进阶', id: 'N11', title: 'POST 提交表单', par: 2,
+    desc: '登录接口只收 POST：用 <code>curl -X POST -d "user=alice&pass=s3cret" http://mysite.local/login</code> 提交表单，注意输出里的请求摘要行；再用 <code>curl -H "Content-Type: application/json" -d \'{"user":"alice"}\' http://mysite.local/login</code> 以 JSON 形式提交（-d 会隐含 POST）。',
+    hints: ['curl -X POST -d "user=alice&pass=s3cret" http://mysite.local/login', 'curl -H "Content-Type: application/json" -d \'{"user":"alice"}\' http://mysite.local/login'],
+    setup(e) { e.reset(); },
+    check(e) { return e.used.has('curl') && e.lastOut.includes('POST') && e.lastOut.includes('alice'); },
+    done: 'curl -X 指定方法、-d 携带请求体（隐含 POST）、-H 自定义头部——三者组合就能调真实的 REST API。'
+  },
+  {
+    stage: '06 网络进阶', id: 'N12', title: 'MX 与反向解析', par: 3,
+    desc: '用 <code>dig example.com MX</code> 查邮件服务器记录，再用 <code>dig -x 93.184.216.34</code> 做反向解析（PTR 记录），最后 <code>dig -x 10.0.0.5 +short</code> 快速确认内网数据库主机的 PTR。',
+    hints: ['dig example.com MX', 'dig -x 93.184.216.34', 'dig -x 10.0.0.5 +short'],
+    setup(e) { e.reset(); },
+    check(e) { return e.used.has('dig') && e.lastOut.includes('db.internal'); },
+    done: '正向解析把域名变成 IP，反向解析（dig -x，查 PTR 记录）把 IP 变回域名——日志分析与反垃圾邮件都靠它。'
+  },
+  {
+    stage: '06 网络进阶', id: 'N13', title: '邻居与路由', par: 3,
+    desc: '用 <code>arp -n</code> 查看局域网里解析过 MAC 地址的邻居，用 <code>route -n</code> 查看内核路由表，再用 <code>ip neigh</code> 对照一遍邻居缓存。',
+    hints: ['arp -n', 'route -n', 'ip neigh'],
+    setup(e) { e.reset(); },
+    check(e) { return e.used.has('arp') && e.used.has('route') && e.used.has('ip') && e.lastOut.includes('192.168.1.1'); },
+    done: 'ARP 缓存记录"谁在局域网里"，路由表决定"包往哪里走"。ip neigh / ip route 是它们的现代写法。'
+  },
+  {
+    stage: '06 网络进阶', id: 'N14', title: '监听端口归谁管', par: 2,
+    desc: '80 端口被谁占了？用 <code>ss -tlnp</code> 列出所有监听中的 TCP 端口和对应进程，再用 <code>ss -anp</code> 查看包括 UDP 在内的全部连接。',
+    hints: ['ss -tlnp', 'ss -anp'],
+    setup(e) { e.reset(); },
+    check(e) { return e.used.has('ss') && e.lastOut.includes('nginx') && e.lastOut.includes('udp'); },
+    done: 'ss -tlnp 是"端口归谁管"的标准答案：-t TCP、-l 监听、-n 数字、-p 进程。加上 -a/-u 还能覆盖 UDP。'
+  },
 ];

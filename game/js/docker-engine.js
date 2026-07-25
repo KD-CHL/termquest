@@ -6,7 +6,8 @@ export class DockerEngine extends LinuxEngine {
   reset() {
     super.reset();
     this.images = [];       // { id, repo, tag, layers: [str], size, base }
-    this.containers = [];   // { id, name, image, status: 'running'|'exited', cmd, ports: [str], logs: [str] }
+    this.containers = [];   // { id, name, image, status: 'running'|'exited', cmd, ports: [str], logs: [str],
+                            //   env: {K:V}, mounts: [{source,target}], workdir, network, autoRemove, files: {path:content} }
     this.networks = [
       { id: this._hex(1), name: 'bridge', driver: 'bridge' },
       { id: this._hex(2), name: 'host', driver: 'host' },
@@ -62,6 +63,12 @@ export class DockerEngine extends LinuxEngine {
       status: 'running',
       cmd: opts.cmd || (image.layers.length ? (image.layers[image.layers.length - 1].replace(/^CMD /, '') || '/bin/sh') : '/bin/sh'),
       ports: opts.ports || [],
+      env: opts.env || {},            // docker run -e KEY=VAL
+      mounts: opts.mounts || [],      // docker run -v 源:目标 → [{source, target}]
+      workdir: opts.workdir || '/',   // docker run -w
+      network: opts.network || 'bridge', // 所属网络（network rm 占用判定用）
+      autoRemove: !!opts.autoRemove,  // docker run --rm
+      files: {},                      // docker cp 用的容器内文件 {path: content}
       logs: [`Starting ${image.repo}...`, `${image.repo} ready on port 80`, 'INFO listening'],
     };
     this.containers.push(c);

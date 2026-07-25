@@ -131,4 +131,75 @@ export const DB_LEVELS = [
     },
     done: 'SQL 查日志定位问题，Redis 记录状态标记进度——关系型数据库 + 缓存的组合拳，后端工程师的日常。数据库模块通关！🎓'
   },
+
+  /* ============ 06 SQL 进阶 ============ */
+  {
+    stage: '06 SQL 进阶', id: 'B11', title: 'GROUP BY 分组统计', par: 3,
+    desc: 'orders 表记录了每笔订单的分类与金额。先 <code>SELECT category, COUNT(*) FROM orders GROUP BY category;</code> 统计各分类的订单数，再 <code>SELECT category, SUM(amount) FROM orders GROUP BY category HAVING SUM(amount) > 40;</code> 只看销售总额超过 40 的分类。',
+    hints: ['sqlite3 shop.db', 'SELECT category, COUNT(*) FROM orders GROUP BY category;', 'SELECT category, SUM(amount) FROM orders GROUP BY category HAVING SUM(amount) > 40;'],
+    setup(e) {
+      e.reset();
+      e.getDb('shop.db').tables.orders = { cols: ['id', 'category', 'amount'], rows: [[1, 'food', 20], [2, 'toys', 30], [3, 'food', 15], [4, 'food', 10], [5, 'toys', 5]] };
+    },
+    check(e) {
+      return e.used.has('sql') && e.lastOut.includes('category|sum(amount)') &&
+        e.lastOut.includes('food|45') && !e.lastOut.includes('toys');
+    },
+    done: 'GROUP BY 按列分组、聚合函数逐组计算，HAVING 再过滤掉不满足条件的组——报表统计的核心套路。'
+  },
+  {
+    stage: '06 SQL 进阶', id: 'B12', title: 'OR / IN / BETWEEN 组合条件', par: 4,
+    desc: '商品表扩容了，试试更灵活的 WHERE：① <code>SELECT name FROM products WHERE price < 10 OR price > 40;</code>（OR 取并集）；② <code>SELECT name FROM products WHERE name IN (\'apple\', \'mouse\', \'cable\');</code>（枚举取值）；③ <code>SELECT name FROM products WHERE price BETWEEN 5 AND 12;</code>（圈定区间）。',
+    hints: ['sqlite3 shop.db', 'SELECT name FROM products WHERE price < 10 OR price > 40;', "SELECT name FROM products WHERE name IN ('apple', 'mouse', 'cable');", 'SELECT name FROM products WHERE price BETWEEN 5 AND 12;'],
+    setup(e) {
+      e.reset();
+      e.getDb('shop.db').tables.products = { cols: ['id', 'name', 'price'], rows: [[1, 'apple', 5], [2, 'keyboard', 12], [3, 'mouse', 8], [4, 'monitor', 88], [5, 'cable', 3], [6, 'chair', 45]] };
+    },
+    check(e) {
+      return e.used.has('sql') && e.lastOut.includes('apple') && e.lastOut.includes('keyboard') &&
+        e.lastOut.includes('mouse') && !e.lastOut.includes('monitor') && !e.lastOut.includes('cable');
+    },
+    done: 'OR 取并集、IN 枚举取值、BETWEEN 圈定区间——WHERE 的三把瑞士军刀，组合起来过滤更精准。'
+  },
+  {
+    stage: '06 SQL 进阶', id: 'B13', title: '批量插入与去重查询', par: 3,
+    desc: '一条语句插入多行：<code>INSERT INTO visits VALUES (1, \'beijing\'), (2, \'shanghai\'), (3, \'beijing\'), (4, \'guangzhou\');</code>，然后 <code>SELECT DISTINCT city FROM visits;</code> 看看共有多少个不重复的城市。',
+    hints: ['sqlite3 shop.db', "INSERT INTO visits VALUES (1, 'beijing'), (2, 'shanghai'), (3, 'beijing'), (4, 'guangzhou');", 'SELECT DISTINCT city FROM visits;'],
+    setup(e) {
+      e.reset();
+      e.getDb('shop.db').tables.visits = { cols: ['id', 'city'], rows: [] };
+    },
+    check(e) {
+      const t = e.getTable('shop.db', 'visits');
+      const lines = e.lastOut.split('\n');
+      return !!t && t.rows.length === 4 && e.used.has('sql') && lines.length === 4 &&
+        e.lastOut.includes('beijing') && e.lastOut.includes('shanghai') && e.lastOut.includes('guangzhou');
+    },
+    done: 'VALUES (...), (...) 一次插入多行，DISTINCT 去除重复行——批量写入与去重统计都很常用。'
+  },
+
+  /* ============ 07 Redis 进阶 ============ */
+  {
+    stage: '07 Redis 进阶', id: 'B14', title: '过期时间与原子计数', par: 6,
+    desc: '用 <code>SET session:token abc123</code> 存一个会话令牌，<code>EXPIRE session:token 300</code> 设定 5 分钟后过期，<code>TTL session:token</code> 查看剩余秒数；再用 <code>INCRBY pageviews 5</code> 和 <code>DECRBY pageviews 2</code> 以原子加减维护页面计数。',
+    hints: ['redis-cli', 'SET session:token abc123', 'EXPIRE session:token 300', 'TTL session:token', 'INCRBY pageviews 5', 'DECRBY pageviews 2'],
+    setup(e) { e.reset(); },
+    check(e) {
+      const pv = e.redis.kv.pageviews;
+      return e.used.has('redis-cli') && e.redis.expiry['session:token'] > Date.now() && !!pv && pv.value === '3';
+    },
+    done: 'EXPIRE/TTL 让缓存会"自毁"——会话、验证码全靠它；INCRBY/DECRBY 原子加减，计数器信手拈来。'
+  },
+  {
+    stage: '07 Redis 进阶', id: 'B15', title: '哈希进阶操作', par: 7,
+    desc: '一条 <code>HMSET user:2 name Bob age 25 city shanghai</code> 批量写入字段，<code>HKEYS user:2</code> 看字段名、<code>HLEN user:2</code> 数字段数，<code>HINCRBY user:2 age 1</code> 给年龄 +1，最后 <code>HDEL user:2 city</code> 删掉字段并用 <code>HEXISTS user:2 city</code> 确认已删除。',
+    hints: ['redis-cli', 'HMSET user:2 name Bob age 25 city shanghai', 'HKEYS user:2', 'HLEN user:2', 'HINCRBY user:2 age 1', 'HDEL user:2 city', 'HEXISTS user:2 city'],
+    setup(e) { e.reset(); },
+    check(e) {
+      const h = e.redis.hashes['user:2'];
+      return e.used.has('redis-cli') && !!h && h.name === 'Bob' && h.age === '26' &&
+        !('city' in h) && e.lastOut.includes('(integer) 0');
+    },
+    done: 'HMSET 批量写、HKEYS/HLEN 查结构、HINCRBY 字段自增、HDEL + HEXISTS 删除并验证——哈希对象管理一气呵成。'
+  },
 ];

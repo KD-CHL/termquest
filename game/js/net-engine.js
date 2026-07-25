@@ -14,6 +14,13 @@ export class NetEngine extends LinuxEngine {
       'db.internal':      { A: ['10.0.0.5'] },
       'down-server.local':{ A: ['192.168.1.99'] },   // 宕机主机（ping 不通）
     };
+    // 反向解析（PTR）：ip -> 主机名（dig -x 用）
+    this.ptr = {
+      '93.184.216.34': 'example.com',
+      '140.82.112.6':  'api.github.com',
+      '192.168.1.50':  'mysite.local',
+      '10.0.0.5':      'db.internal',
+    };
     // 主机表：ip -> { hostname, up, ports: {端口: 服务名} }
     this.hosts = {
       '93.184.216.34':  { hostname: 'example.com', up: true, ports: { 80: 'http', 443: 'https' } },
@@ -34,12 +41,21 @@ export class NetEngine extends LinuxEngine {
       '192.168.1.0/24 dev eth0 proto kernel scope link src 192.168.1.10',
       '10.0.0.0/8 via 192.168.1.1 dev eth0',
     ];
+    // ARP / 邻居缓存（arp / ip neigh 用）
+    this.arp = [
+      { ip: '192.168.1.1',  mac: '52:54:00:00:01:01', iface: 'eth0' },  // 网关 gateway
+      { ip: '192.168.1.50', mac: '52:54:00:aa:bb:50', iface: 'eth0' },  // mysite.local
+      { ip: '192.168.1.99', mac: '52:54:00:aa:bb:99', iface: 'eth0' },  // down-server.local
+      { ip: '10.0.0.5',     mac: '52:54:00:cc:dd:05', iface: 'eth0' },  // db.internal
+    ];
     // 活动连接（ss / netstat 用）
     this.connections = [
       { proto: 'tcp', local: '0.0.0.0:22', foreign: '0.0.0.0:*', state: 'LISTEN', proc: 'sshd' },
       { proto: 'tcp', local: '0.0.0.0:80', foreign: '0.0.0.0:*', state: 'LISTEN', proc: 'nginx' },
       { proto: 'tcp', local: '192.168.1.10:44123', foreign: '93.184.216.34:443', state: 'ESTABLISHED', proc: 'curl' },
       { proto: 'tcp', local: '192.168.1.10:51001', foreign: '10.0.0.5:5432', state: 'ESTABLISHED', proc: 'psql' },
+      { proto: 'udp', local: '0.0.0.0:68', foreign: '0.0.0.0:*', state: 'UNCONN', proc: 'dhclient' },
+      { proto: 'udp', local: '0.0.0.0:5353', foreign: '0.0.0.0:*', state: 'UNCONN', proc: 'avahi-daemon' },
     ];
     // HTTP 内容（curl / wget 用）：url -> { status, body }
     this.http = {
@@ -49,6 +65,8 @@ export class NetEngine extends LinuxEngine {
       'https://api.github.com/users/octocat': { status: 200, body: '{\n  "login": "octocat",\n  "id": 1,\n  "public_repos": 8,\n  "followers": 9000\n}' },
       'http://mysite.local/data.json': { status: 200, body: '{"status":"ok","users":42,"version":"1.2.3"}' },
       'http://mysite.local/health': { status: 200, body: 'OK' },
+      'http://mysite.local/login': { status: 200, body: '{"login":"ok","user":"alice","token":"tq-8f3a2b"}' },
+      'http://example.com/old': { status: 301, body: '<html><body><h1>301 Moved Permanently</h1></body></html>', redirect: 'http://example.com' },
     };
     this.sshKeys = null; // ssh-keygen 生成后 { pub, priv }
     this._seedNetFiles();

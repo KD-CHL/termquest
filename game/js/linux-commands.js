@@ -27,7 +27,7 @@ export function linuxExecute(input, engineOverride) {
   if (input.endsWith('&') && !input.endsWith('&&')) { bg = true; input = input.slice(0, -1).trim(); }
 
   const base = input.split(/\s/)[0];
-  if (!['help', 'clear', 'ls', 'pwd', 'cat', 'ps', 'top', 'jobs', 'whoami', 'hostname', 'uname', 'date', 'history', 'echo', 'wc', 'head', 'tail', 'env'].includes(base)) {
+  if (!['help', 'clear', 'ls', 'pwd', 'cat', 'ps', 'top', 'jobs', 'whoami', 'hostname', 'uname', 'date', 'history', 'echo', 'wc', 'head', 'tail', 'env', 'which', 'stat', 'basename', 'dirname', 'file'].includes(base)) {
     app.cmdCount++;
   }
   if (app.updateCmdCount) app.updateCmdCount();
@@ -137,28 +137,69 @@ const CMD = {
     const node = e.follow(target);
     if (!node) return { out: [], err: [`ls: 无法访问 '${target}': 没有那个文件或目录`] };
     if (node.type !== 'dir') return { out: [e.basename(e.resolvePath(target))], mutated: false };
-    const entries = Object.entries(node.children).sort(([x], [y]) => x.localeCompare(y));
-    if (flags.includes('l')) {
+
+    const showAll = flags.includes('a') || flags.includes('A');
+    const sizeOf = c => c.type === 'dir' ? 4096 : c.type === 'link' ? c.target.length : (c.content || '').length;
+    const humanSize = n => n >= 1048576 ? (n / 1048576).toFixed(1) + 'M' : n >= 1024 ? (n / 1024).toFixed(1) + 'K' : String(n);
+
+    const getEntries = n => {
+      let entries = Object.entries(n.children);
+      if (!showAll) entries = entries.filter(([name]) => !name.startsWith('.'));
+      if (flags.includes('t')) entries.sort(([x], [y]) => mtimeOf(y) - mtimeOf(x) || x.localeCompare(y));
+      else if (flags.includes('S')) entries.sort(([x, cx], [y, cy]) => sizeOf(cy) - sizeOf(cx) || x.localeCompare(y));
+      else entries.sort(([x], [y]) => x.localeCompare(y));
+      return entries;
+    };
+    const fmtLong = entries => {
       const lines = [`total ${entries.length}`];
       for (const [name, child] of entries) {
-        const size = child.type === 'dir' ? 4096 : child.type === 'link' ? child.target.length : (child.content || '').length;
+        const size = sizeOf(child);
+        const sizeStr = flags.includes('h') ? humanSize(size) : String(size);
         const arrow = child.type === 'link' ? ` -> ${child.target}` : '';
-        lines.push(`${child.mode} 1 ${child.owner.padEnd(6)} ${child.group.padEnd(6)} ${String(size).padStart(5)} Jul 25 10:00 ${name}${arrow}`);
+        lines.push(`${child.mode} 1 ${child.owner.padEnd(6)} ${child.group.padEnd(6)} ${sizeStr.padStart(5)} Jul 25 10:00 ${name}${arrow}`);
       }
-      return { out: lines, mutated: false };
+      return lines;
+    };
+    const fmtShort = entries => entries.map(([n, c]) => c.type === 'dir' ? n + '/' : n);
+
+    // -R 递归列出子目录（带 目录: 头）
+    if (flags.includes('R')) {
+      const out = [];
+      const rec = (n, label) => {
+        const entries = getEntries(n);
+        out.push(`${label}:`);
+        out.push(...(flags.includes('l') ? fmtLong(entries) : fmtShort(entries)));
+        out.push('');
+        for (const [name, child] of entries) {
+          if (child.type === 'dir') rec(child, (label === '.' ? './' : label + '/') + name);
+        }
+      };
+      rec(node, target === e.cwd ? '.' : target);
+      while (out.length && out[out.length - 1] === '') out.pop();
+      return { out, mutated: false };
     }
-    return { out: [entries.map(([n, c]) => c.type === 'dir' ? n + '/' : n).join('  ') || '(空)'], mutated: false };
+
+    const entries = getEntries(node);
+    if (flags.includes('l')) return { out: fmtLong(entries), mutated: false };
+    const names = fmtShort(entries);
+    if (flags.includes('1')) return { out: names.length ? names : ['(空)'], mutated: false };
+    return { out: [names.join('  ') || '(空)'], mutated: false };
   },
 
   cat: (a, stdin, e) => {
-    if (!a.length) return { out: stdin ? stdin.split('\n') : [], mutated: false };
+    const flags = a.filter(x => x.startsWith('-')).join('');
+    const files = a.filter(x => !x.startsWith('-'));
+    const number = lines => flags.includes('n')
+      ? lines.map((l, i) => `${String(i + 1).padStart(6)}\t${l}`)
+      : lines;
+    if (!files.length) return { out: number(stdin ? stdin.split('\n') : []), mutated: false };
     const out = [];
-    for (const f of a) {
+    for (const f of files) {
       const r = e.readFile(f);
       if (r.err) return { out: [], err: [r.err] };
       out.push(...r.content.replace(/\n$/, '').split('\n'));
     }
-    return { out, mutated: false };
+    return { out: number(out), mutated: false };
   },
 
   echo: (a, stdin, e) => {
@@ -257,23 +298,58 @@ const CMD = {
     const flags = a.filter(x => x.startsWith('-')).join('');
     const rest = a.filter(x => !x.startsWith('-'));
     if (!rest.length) return { out: [], err: ['用法: grep [选项] 模式 [文件]'] };
-    const pattern = rest[0].replace(/^["']|["']$/g, '');
-    let lines;
+    let pattern = rest[0].replace(/^["']|["']$/g, '');
+    if (flags.includes('w')) pattern = `\\b(?:${pattern})\\b`;
+    let re;
+    try { re = new RegExp(pattern, flags.includes('i') ? 'i' : ''); }
+    catch { return { out: [], err: [`grep: 无效的正则: ${pattern}`] }; }
+    const test = l => flags.includes('v') ? !re.test(l) : re.test(l);
+    const matchParts = l => {
+      const reG = new RegExp(re.source, re.flags.includes('g') ? re.flags : re.flags + 'g');
+      const parts = []; let m;
+      while ((m = reG.exec(l))) { parts.push(m[0]); if (!m[0]) reG.lastIndex++; }
+      return parts;
+    };
+
+    // -r 递归搜索目录，输出 路径:行
+    if (flags.includes('r') && rest[1] && e.isDir(rest[1])) {
+      const base = rest[1].replace(/\/+$/, '') || '.';
+      const out = []; let count = 0; const files = [];
+      for (const rel of e.walk(base)) {
+        const p = base === '.' ? './' + rel : base + '/' + rel;
+        const r = e.readFile(p);
+        if (r.err) continue;
+        const hits = r.content.split('\n').map((l, i) => [i + 1, l]).filter(([, l]) => test(l));
+        if (!hits.length) continue;
+        files.push(p); count += hits.length;
+        if (flags.includes('c') || flags.includes('l')) continue;
+        for (const [no, l] of hits) {
+          if (flags.includes('o')) out.push(...matchParts(l).map(s => `${p}:${s}`));
+          else if (flags.includes('n')) out.push(`${p}:${no}:${l}`);
+          else out.push(`${p}:${l}`);
+        }
+      }
+      if (flags.includes('c')) return { out: [String(count)], mutated: false, sfx: 'text-grep' };
+      if (flags.includes('l')) return { out: files, mutated: false, sfx: 'text-grep' };
+      return { out, mutated: false, sfx: 'text-grep' };
+    }
+
+    let lines, srcName = null;
     if (rest[1]) {
       const r = e.readFile(rest[1]);
       if (r.err) return { out: [], err: [r.err] };
       lines = r.content.split('\n');
+      srcName = rest[1];
     } else {
       lines = stdin.split('\n');
     }
-    let re;
-    try { re = new RegExp(pattern, flags.includes('i') ? 'i' : ''); }
-    catch { return { out: [], err: [`grep: 无效的正则: ${pattern}`] }; }
-    let matched = lines.filter(l => re.test(l));
-    if (flags.includes('v')) matched = lines.filter(l => !re.test(l));
-    const out = flags.includes('n') && rest[1]
-      ? matched.map(l => `${lines.indexOf(l) + 1}:${l}`)
-      : matched;
+    const hits = lines.map((l, i) => [i + 1, l]).filter(([, l]) => test(l));
+    if (flags.includes('c')) return { out: [String(hits.length)], mutated: false, sfx: 'text-grep' };
+    if (flags.includes('l')) return { out: hits.length && srcName ? [srcName] : [], mutated: false, sfx: 'text-grep' };
+    let out;
+    if (flags.includes('o')) out = hits.flatMap(([, l]) => matchParts(l));
+    else if (flags.includes('n') && srcName) out = hits.map(([no, l]) => `${no}:${l}`);
+    else out = hits.map(([, l]) => l);
     return { out, mutated: false, sfx: 'text-grep' };
   },
 
@@ -332,9 +408,33 @@ const CMD = {
   },
 
   sort: (a, stdin, e) => {
-    const flags = a.filter(x => x.startsWith('-')).join('');
-    let lines = (a.find(x => !x.startsWith('-')) ? e.readFile(a.find(x => !x.startsWith('-')))?.content || '' : stdin).split('\n').filter(l => l || stdin);
-    if (flags.includes('n')) lines.sort((x, y) => parseFloat(x) - parseFloat(y));
+    const args = [...a];
+    let key = null, sep = null;
+    for (let i = 0; i < args.length; i++) {
+      if (args[i] === '-k') { key = parseInt(args[i + 1]) || null; args.splice(i, 2); i--; }
+      else if (/^-k\d+$/.test(args[i] || '')) { key = parseInt(args[i].slice(2)); args.splice(i, 1); i--; }
+      else if (args[i] === '-t') { sep = (args[i + 1] || '').replace(/^["']|["']$/g, ''); args.splice(i, 2); i--; }
+      else if (/^-t.$/.test(args[i] || '')) { sep = args[i].slice(2); args.splice(i, 1); i--; }
+    }
+    const flags = args.filter(x => x.startsWith('-')).join('');
+    let lines = (args.find(x => !x.startsWith('-')) ? e.readFile(args.find(x => !x.startsWith('-')))?.content || '' : stdin).split('\n').filter(l => l || stdin);
+    if (key) {
+      const fieldOf = line => {
+        const f = sep ? line.split(sep) : line.split(/\s+/).filter(Boolean);
+        return f[key - 1] ?? '';
+      };
+      const tie = (x, y) => x < y ? -1 : x > y ? 1 : 0;
+      lines.sort((x, y) => {
+        const kx = fieldOf(x), ky = fieldOf(y);
+        let c;
+        if (flags.includes('n')) c = (parseFloat(kx) || 0) - (parseFloat(ky) || 0);
+        else if (flags.includes('f')) c = kx.toLowerCase().localeCompare(ky.toLowerCase());
+        else c = tie(kx, ky);
+        return c || tie(x, y);
+      });
+    }
+    else if (flags.includes('n')) lines.sort((x, y) => parseFloat(x) - parseFloat(y));
+    else if (flags.includes('f')) lines.sort((x, y) => x.toLowerCase().localeCompare(y.toLowerCase()));
     else lines.sort();
     if (flags.includes('r')) lines.reverse();
     if (flags.includes('u')) lines = [...new Set(lines)];
@@ -375,47 +475,83 @@ const CMD = {
     const chars = text.length;
     if (flags.includes('l')) return { out: [String(lines)], mutated: false };
     if (flags.includes('w')) return { out: [String(words)], mutated: false };
+    if (flags.includes('c')) return { out: [String(byteLen(text))], mutated: false };
+    if (flags.includes('m')) return { out: [String(chars)], mutated: false };
     return { out: [`  ${lines}  ${words} ${chars}${file ? ' ' + file : ''}`], mutated: false };
   },
 
   head: (a, stdin, e) => {
-    let n = 10;
+    let n = 10, bytes = null;
     const args = [...a];
-    const ni = args.indexOf('-n');
-    if (ni >= 0) { n = parseInt(args[ni + 1]) || 10; args.splice(ni, 2); }
+    for (let i = 0; i < args.length; i++) {
+      if (args[i] === '-n') { n = parseInt(args[i + 1]) || 10; args.splice(i, 2); i--; }
+      else if (/^-n\d+$/.test(args[i] || '')) { n = parseInt(args[i].slice(2)) || 10; args.splice(i, 1); i--; }
+      else if (args[i] === '-c') { bytes = parseInt(args[i + 1]) || 0; args.splice(i, 2); i--; }
+      else if (/^-c\d+$/.test(args[i] || '')) { bytes = parseInt(args[i].slice(2)) || 0; args.splice(i, 1); i--; }
+    }
     const file = args.find(x => !x.startsWith('-'));
     let text = file ? (e.readFile(file)?.content || '') : stdin;
+    if (bytes !== null) {
+      const s = text.slice(0, bytes);
+      return { out: s ? [s] : [], mutated: false };
+    }
     return { out: text.split('\n').slice(0, n), mutated: false };
   },
 
   tail: (a, stdin, e) => {
-    let n = 10;
+    let n = 10, fromLine = null, bytes = null;
     const args = [...a];
-    const ni = args.indexOf('-n');
-    if (ni >= 0) { n = parseInt(args[ni + 1]) || 10; args.splice(ni, 2); }
+    for (let i = 0; i < args.length; i++) {
+      const arg = args[i] || '';
+      if (arg === '-n') {
+        const v = args[i + 1] || '';
+        if (v.startsWith('+')) fromLine = parseInt(v.slice(1)) || 1;
+        else n = parseInt(v) || 10;
+        args.splice(i, 2); i--;
+      }
+      else if (/^-n\+\d+$/.test(arg)) { fromLine = parseInt(arg.slice(3)) || 1; args.splice(i, 1); i--; }
+      else if (/^-n\d+$/.test(arg)) { n = parseInt(arg.slice(2)) || 10; args.splice(i, 1); i--; }
+      else if (arg === '-c') { bytes = parseInt(args[i + 1]) || 0; args.splice(i, 2); i--; }
+      else if (/^-c\d+$/.test(arg)) { bytes = parseInt(arg.slice(2)) || 0; args.splice(i, 1); i--; }
+      else if (arg === '-f') { args.splice(i, 1); i--; } // 模拟非阻塞：接受但不跟踪
+    }
     const file = args.find(x => !x.startsWith('-'));
     let text = file ? (e.readFile(file)?.content || '') : stdin;
+    if (bytes !== null) {
+      const s = text.slice(Math.max(0, text.length - bytes));
+      return { out: s ? [s] : [], mutated: false };
+    }
     const lines = text.split('\n');
+    if (text.endsWith('\n')) lines.pop(); // 末尾换行不算空行，与真实 tail 一致
+    if (fromLine !== null) return { out: lines.slice(fromLine - 1), mutated: false };
     return { out: lines.slice(Math.max(0, lines.length - n)), mutated: false };
   },
 
   cut: (a, stdin, e) => {
-    let delim = '\t', fields = null;
+    let delim = '\t', fields = null, chars = null;
     const args = [...a];
     for (let i = 0; i < args.length; i++) {
       if (args[i] === '-d') { delim = args[i + 1]?.replace(/^["']|["']$/g, '') || '\t'; args.splice(i, 2); i--; }
       else if (args[i]?.startsWith('-d')) { delim = args[i].slice(2); args.splice(i, 1); i--; }
       else if (args[i] === '-f') { fields = args[i + 1]; args.splice(i, 2); i--; }
       else if (args[i]?.startsWith('-f')) { fields = args[i].slice(2); args.splice(i, 1); i--; }
+      else if (args[i] === '-c') { chars = args[i + 1]; args.splice(i, 2); i--; }
+      else if (args[i]?.startsWith('-c')) { chars = args[i].slice(2); args.splice(i, 1); i--; }
     }
-    if (!fields) return { out: [], err: ['用法: cut -d 分隔符 -f 列号 [文件]'] };
+    if (!fields && !chars) return { out: [], err: ['用法: cut -d 分隔符 -f 列号 [文件]'] };
     const file = args.find(x => !x.startsWith('-'));
     let lines = file ? (e.readFile(file)?.content || '').split('\n').filter(l => l) : stdin.split('\n').filter(l => l);
-    const cols = fields.split(',').map(x => parseInt(x) - 1);
-    const out = lines.map(l => {
-      const parts = l.split(delim);
-      return cols.map(c => parts[c] || '').join(delim);
-    });
+    let out;
+    if (chars) {
+      const idx = chars.split(',').map(x => parseInt(x) - 1);
+      out = lines.map(l => idx.map(c => l[c] || '').join(''));
+    } else {
+      const cols = fields.split(',').map(x => parseInt(x) - 1);
+      out = lines.map(l => {
+        const parts = l.split(delim);
+        return cols.map(c => parts[c] || '').join(delim);
+      });
+    }
     return { out, mutated: false };
   },
 
@@ -534,21 +670,125 @@ const CMD = {
   history: (a, stdin, e) => ({ out: e.history.map((h, i) => `  ${String(i + 1).padStart(4)}  ${h}`), mutated: false }),
 
   man: (a, stdin, e) => ({ out: [`本模拟器不提供 man 手册，输入 help 查看命令速查`], mutated: false }),
+
+  /* ---- 查询 / 路径 ---- */
+  which: (a, stdin, e) => {
+    // 真实 which：找到打印路径，找不到什么都不打印
+    const SYS = ['sh', 'bash', 'dash', 'true', 'false', 'test', 'su', 'passwd', 'sudo', 'useradd',
+      'systemctl', 'journalctl', 'crontab', 'tar', 'gzip', 'gunzip', 'df', 'du', 'free', 'uptime',
+      'lsof', 'vmstat', 'dmesg', 'lsblk', 'mount', 'umount', 'ping', 'traceroute', 'dig', 'nslookup',
+      'host', 'curl', 'wget', 'nc', 'ss', 'netstat', 'ip', 'ifconfig', 'ssh', 'scp', 'rsync',
+      'ssh-keygen', 'docker', 'docker-compose', 'kubectl', 'sqlite3', 'redis-cli', 'vim', 'find',
+      'xargs', 'tee', 'diff', 'paste', 'join', 'comm', 'column', 'seq', 'rev'];
+    if (!a.length) return { out: [], err: ['用法: which 命令'] };
+    const out = [];
+    for (const c of a) {
+      if (CMD[c] || SYS.includes(c)) out.push(`/usr/bin/${c}`);
+    }
+    return { out, mutated: false };
+  },
+
+  stat: (a, stdin, e) => {
+    const file = a.find(x => !x.startsWith('-'));
+    if (!file) return { out: [], err: ['用法: stat 文件'] };
+    const node = e.getNode(e.resolvePath(file));
+    if (!node) return { out: [], err: [`stat: 无法 stat '${file}': 没有那个文件或目录`] };
+    const size = node.type === 'dir' ? 4096 : node.type === 'link' ? node.target.length : (node.content || '').length;
+    const typeStr = node.type === 'dir' ? 'directory' : node.type === 'link' ? `symbolic link to ${node.target}` : 'regular file';
+    const octal = node.mode.slice(1).match(/.{3}/g)
+      .map(t => (t[0] !== '-' ? 4 : 0) + (t[1] !== '-' ? 2 : 0) + (t[2] !== '-' ? 1 : 0)).join('');
+    const ino = 1000 + (mtimeOf(e.resolvePath(file)) % 9000);
+    return {
+      out: [
+        `  File: ${file}`,
+        `  Size: ${size}\t\tBlocks: ${Math.max(8, Math.ceil(size / 512) * 8)}\t IO Block: 4096   ${typeStr}`,
+        `Device: 801h/2049d\tInode: ${ino}\t Links: 1`,
+        `Access: (0${octal}/${node.mode})  Uid: ( 1000/   ${node.owner})   Gid: ( 1000/   ${node.group})`,
+        `Access: 2026-07-25 10:00:00.000000000 +0800`,
+        `Modify: 2026-07-25 10:00:00.000000000 +0800`,
+        `Change: 2026-07-25 10:00:00.000000000 +0800`,
+        ` Birth: -`,
+      ], mutated: false
+    };
+  },
+
+  basename: (a) => {
+    if (!a.length) return { out: [], err: ['basename: 缺少操作数'] };
+    let name = a[0].replace(/\/+$/, '').split('/').filter(Boolean).pop() || '/';
+    if (a[1] && name.endsWith(a[1]) && name !== a[1]) name = name.slice(0, -a[1].length);
+    return { out: [name], mutated: false };
+  },
+
+  dirname: (a) => {
+    if (!a.length) return { out: [], err: ['dirname: 缺少操作数'] };
+    const p = a[0].replace(/\/+$/, '');
+    const i = p.lastIndexOf('/');
+    if (i < 0) return { out: ['.'], mutated: false };
+    if (i === 0) return { out: ['/'], mutated: false };
+    return { out: [p.slice(0, i).replace(/\/+$/, '') || '/'], mutated: false };
+  },
+
+  alias: (a, stdin, e) => {
+    if (!e.aliases) e.aliases = { ll: 'ls -l', la: 'ls -la', '..': 'cd ..', cls: 'clear' };
+    if (!a.length) {
+      return { out: Object.entries(e.aliases).map(([k, v]) => `alias ${k}='${v}'`), mutated: false };
+    }
+    for (const arg of a) {
+      const eq = arg.indexOf('=');
+      if (eq > 0) e.aliases[arg.slice(0, eq)] = arg.slice(eq + 1).replace(/^["']|["']$/g, '');
+    }
+    return { out: [] };
+  },
+
+  file: (a, stdin, e) => {
+    if (!a.length) return { out: [], err: ['用法: file 路径'] };
+    const out = [];
+    for (const p of a) {
+      const node = e.follow(p);
+      if (!node) { out.push(`${p}: cannot open (No such file or directory)`); continue; }
+      if (node.type === 'dir') { out.push(`${p}: directory`); continue; }
+      if (node.type === 'link') { out.push(`${p}: symbolic link to ${node.target}`); continue; }
+      const c = node.content || '';
+      if (!c) { out.push(`${p}: empty`); continue; }
+      if (c.startsWith('#!')) { out.push(`${p}: a script text executable`); continue; }
+      const t = c.trim();
+      if ((t.startsWith('{') && t.endsWith('}')) || (t.startsWith('[') && t.endsWith(']'))) {
+        try { JSON.parse(t); out.push(`${p}: JSON data`); continue; } catch { /* 不是 JSON，继续判断 */ }
+      }
+      out.push(/^[\x20-\x7E\n\r\t]*$/.test(c) ? `${p}: ASCII text` : `${p}: UTF-8 Unicode text`);
+    }
+    return { out, mutated: false };
+  },
 };
 
 function escapeRe(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
 
+// 合成 mtime：按路径字符串做稳定哈希，供 ls -t 排序（无真实时间戳时的模拟序）
+function mtimeOf(s) { let h = 0; for (const ch of String(s)) h = (h * 31 + ch.codePointAt(0)) % 1000003; return h; }
+
+// UTF-8 字节长度（wc -c）
+function byteLen(s) {
+  let b = 0;
+  for (const ch of String(s)) {
+    const cp = ch.codePointAt(0);
+    b += cp < 0x80 ? 1 : cp < 0x800 ? 2 : cp < 0x10000 ? 3 : 4;
+  }
+  return b;
+}
+
 function showLinuxHelp() {
   ['── 文件与目录 ──',
-    '  pwd · cd 目录 · ls [-l] [目录]',
-    '  cat 文件 · mkdir [-p] 目录 · touch 文件',
+    '  pwd · cd 目录 · ls [-l|-a|-h|-R|-t|-S|-1] [目录]',
+    '  cat [-n] 文件 · mkdir [-p] 目录 · touch 文件',
     '  cp 源 目标 · mv 源 目标 · rm [-r] 目标',
     '  chmod 模式 文件 · chown 用户:组 文件 · ln -s 目标 链接',
+    '  stat 文件 · file 路径 · which 命令 · basename 路径 · dirname 路径',
     '── 文本处理（支持管道 | 和重定向 > >>）──',
-    '  echo "文本" · grep [-inv] 模式 [文件]',
+    '  echo "文本" · grep [-invE] [-r|-c|-l|-w|-o] 模式 [文件|目录]',
     '  sed \'s/旧/新/[g]\' [文件] · awk \'{print $1}\' [文件]',
-    '  sort [-nru] · uniq [-cdu] · wc [-lw] · head [-n N] · tail [-n N]',
-    '  cut -d 分隔符 -f 列 · tr [-d] 集1 集2',
+    '  sort [-nru] [-k 列] [-t 分隔符] [-f] · uniq [-cdu] · wc [-lwcm]',
+    '  head [-n N|-c N] · tail [-n N|-n +N|-c N|-f] · cut -d 分隔符 -f 列 / cut -c 1,3',
+    '  tr [-d] 集1 集2 · alias [名称=\'命令\']',
     '── 进程 ──',
     '  ps [-aux] · top · kill PID · jobs · bg · fg',
     '  sleep 秒 & · nohup 命令 &',

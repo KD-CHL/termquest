@@ -223,4 +223,90 @@ export const LEVELS = [
     },
     done: '--soft 只移动分支指针，改动留在暂存区，配合 commit 就能把多个提交压缩成一个——整理提交历史的必备技能。'
   },
+
+  /* ============ 07 洞察 ============ */
+  {
+    stage: '07 洞察', id: '07', title: '图谱纵览', par: 5,
+    desc: 'main 和 feat 分支已经分叉。用 <code>git log --graph --all</code> 画出全部分支的 ASCII 图谱，用 <code>git log --stat</code> 查看每个提交改了哪些文件，然后把审查笔记写入 review.txt 并提交。',
+    hints: ['git log --graph --all', 'git log --stat', 'echo "history reviewed" > review.txt', 'git add review.txt', 'git commit -m "review history"'],
+    setup(g) {
+      g.reset(); seed(g);
+      commitTo(g, 'main', 'v2', { 'hello.txt': 'hello git\nv2\n' });
+      g.branches['feat'] = g.branches.main;
+      commitTo(g, 'feat', 'feat: experiment', { 'hello.txt': 'hello git\nv2\n', 'exp.txt': 'try\n' });
+      g.HEAD = 'main'; const tr = g.headTree(); g.files = g.snap(tr); g.index = g.snap(tr);
+    },
+    check(g) {
+      const c = g.commits[g.branches.main];
+      return g.used.has('log') && g.headBranch === 'main' && c && c.msg === 'review history' && c.tree['review.txt'] !== undefined;
+    },
+    done: '--graph 把分叉与合并画成泳道图，--stat 逐个提交列出文件改动，--all 则把每个分支都纳入视野。'
+  },
+  {
+    stage: '07 洞察', id: '07', title: '暂存区透视', par: 5,
+    desc: '修改 hello.txt 并 <code>git add</code>，用 <code>git diff --staged</code> 审查"即将被提交的内容"；接着再改 app.txt，用 <code>git commit -am "..."</code> 自动暂存所有已跟踪文件的修改并一次提交。',
+    hints: ['echo "v2" >> hello.txt', 'git add hello.txt', 'git diff --staged', 'echo "patch" >> app.txt', 'git commit -am "batch update"'],
+    setup(g) {
+      g.reset(); seed(g);
+      commitTo(g, 'main', 'add app', { 'hello.txt': 'hello git\n', 'app.txt': 'v1\n' });
+    },
+    check(g) {
+      const c = g.commits[g.branches.main];
+      return g.used.has('diff') && g.used.has('commit') && c && c.msg === 'batch update' &&
+        c.tree['hello.txt'].includes('v2') && c.tree['app.txt'].includes('patch');
+    },
+    done: 'git diff 看"工作区 vs 暂存区"，git diff --staged 看"暂存区 vs HEAD"；commit -a 省去逐个 add 已跟踪文件的步骤。'
+  },
+
+  /* ============ 08 整理 ============ */
+  {
+    stage: '08 整理', id: '08', title: '命名暂存与丢弃', par: 4,
+    desc: '改到一半（追加一行到 hello.txt）要去做别的事。用 <code>git stash push -m "wip: login"</code> 存一条带备注的暂存，<code>git stash list</code> 确认后，决定这次改动不要了——用 <code>git stash drop</code> 丢弃它。',
+    hints: ['echo "wip" >> hello.txt', 'git stash push -m "wip: login"', 'git stash list', 'git stash drop'],
+    setup(g) { g.reset(); seed(g); },
+    check(g) {
+      return g.used.has('stash') && g.stash.length === 0 && g.files['hello.txt'] === 'hello git\n';
+    },
+    done: 'push -m 让每条 stash 都有名字，show 可以预览内容，drop 则把最新一条彻底扔掉。'
+  },
+  {
+    stage: '08 整理', id: '08', title: '清理标签与杂物', par: 3,
+    desc: '打错的标签 <code>beta</code> 用 <code>git tag -d beta</code> 删除；工作区还散落着调试产生的未跟踪文件（debug.log、core.dump），用 <code>git clean -fd</code> 一次性清理干净。',
+    hints: ['git tag -d beta', 'git clean -fd', 'git status'],
+    setup(g) {
+      g.reset(); seed(g);
+      g.tags['beta'] = g.branches.main;
+      g.files['debug.log'] = 'temp debug\n';
+      g.files['core.dump'] = 'dump\n';
+    },
+    check(g) {
+      return g.used.has('tag') && g.used.has('clean') &&
+        g.tags['beta'] === undefined && g.files['debug.log'] === undefined && g.files['core.dump'] === undefined;
+    },
+    done: 'tag -d 删除打错的标签，clean -fd 清空未跟踪文件——前者安全，后者不可恢复，执行前最好先 git status 看一眼。'
+  },
+
+  /* ============ 09 远程 ============ */
+  {
+    stage: '09 远程', id: '09', title: '克隆推送拉取', par: 6,
+    desc: '团队仓库在 <code>https://git.example.com/app.git</code>（模拟环境预设）。先 <code>git clone</code> 克隆（会带上队友的 util.js），新建 fix.txt 提交后 <code>git push</code> 推送，最后 <code>git pull</code> 确认与远程同步。',
+    hints: ['git clone https://git.example.com/app.git', 'echo "hotfix" > fix.txt', 'git add fix.txt', 'git commit -m "fix: patch"', 'git push', 'git pull'],
+    setup(g) {
+      g.reset();
+      g.remotes = {}; g.remoteStores = {};
+      g.index['app.js'] = g.files['app.js'] = 'console.log("v1");\n';
+      const a = g.newId();
+      g.commits[a] = { id: a, msg: 'init', parents: [], tree: g.snap(g.index) };
+      const b = g.newId();
+      g.commits[b] = { id: b, msg: 'team: add util', parents: [a], tree: { 'app.js': 'console.log("v1");\n', 'util.js': 'export const util = 1;\n' } };
+      g.remoteStores['https://git.example.com/app.git'] = { branches: { main: b } };
+    },
+    check(g) {
+      const c = g.commits[g.branches.main];
+      return g.used.has('clone') && g.used.has('push') && g.used.has('pull') &&
+        g.files['util.js'] !== undefined && c && c.tree['fix.txt'] !== undefined &&
+        g.remotes.origin && g.remotes.origin.branches.main === g.branches.main;
+    },
+    done: 'clone 拉下整个仓库，push 上传本地提交，pull 快进合并远程更新——团队协作的三板斧。'
+  },
 ];

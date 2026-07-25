@@ -103,4 +103,58 @@ export const K8S_LEVELS = [
     },
     done: '部署 → 扩容 → 暴露 → 总览——一套完整的 K8s 上线流程。恭喜，Kubernetes 模块通关！🎓'
   },
+
+  /* ============ 08 高级运维 ============ */
+  {
+    stage: '08 高级运维', id: 'K09', title: 'run 一个 Pod 应急', par: 3,
+    desc: 'kubectl run 是创建临时 Pod 最快的方式：<code>kubectl run debug --image=busybox</code>，然后 <code>kubectl get pods</code> 确认它 Running，再用 <code>kubectl get pod debug -o wide</code> 看看它被调度到哪台节点、分到了什么 Pod IP。',
+    hints: ['kubectl run debug --image=busybox', 'kubectl get pods', 'kubectl get pod debug -o wide'],
+    setup(e) { e.reset(); },
+    check(e) {
+      const p = e.pods.find(x => x.name === 'debug' && x.namespace === 'default');
+      return !!p && p.image === 'busybox' && p.status === 'Running' && e.lastOut.includes('debug') && e.lastOut.includes('10.244.');
+    },
+    done: 'run 一条命令拉起 Pod，-o wide 暴露 IP 与节点——应急调试的标准开场。'
+  },
+  {
+    stage: '08 高级运维', id: 'K10', title: '用标签定位 Pod', par: 3,
+    desc: '标签是资源的身份贴纸。先给 frontend 的某个 Pod 打上标记：<code>kubectl label pod <pod名> env=canary</code>，再用 <code>kubectl get pods -l env=canary</code> 把它精确筛选出来。',
+    hints: ['kubectl get pods', 'kubectl label pod <pod名> env=canary', 'kubectl get pods -l env=canary'],
+    setup(e) { e.reset(); },
+    check(e) {
+      const tagged = e.pods.filter(p => p.namespace === 'default' && p.labels && p.labels.env === 'canary');
+      return tagged.length >= 1 && e.used.has('kubectl') && e.lastOut.includes(tagged[0].name);
+    },
+    done: 'key=value 标签 + -l 选择器，成百上千的 Pod 也能任你切片——这是灰度发布与批量运维的起点。'
+  },
+  {
+    stage: '08 高级运维', id: 'K11', title: '滚动重启', par: 3,
+    desc: '发布新版本后需要重启 Pod 才能生效。用 <code>kubectl rollout restart deployment frontend</code> 滚动重启 frontend（旧 Pod 会被整批换掉），再 <code>kubectl rollout status deployment/frontend</code> 确认滚动完成。',
+    hints: ['kubectl rollout restart deployment frontend', 'kubectl get pods', 'kubectl rollout status deployment/frontend'],
+    setup(e) { e.reset(); e._k11Before = e.podsOfDeployment('frontend').map(p => p.name); },
+    check(e) {
+      const pods = e.podsOfDeployment('frontend');
+      return pods.length === 2 && pods.every(p => p.status === 'Running' && !e._k11Before.includes(p.name))
+        && e.lastOut.includes('successfully rolled out');
+    },
+    done: 'rollout restart 让 Pod 逐个重建、服务不掉线——云原生时代"重启治百病"的标准姿势。'
+  },
+  {
+    stage: '08 高级运维', id: 'K12', title: '清空一个命名空间', par: 4,
+    desc: 'tmp 命名空间里堆满了调试用的测试资源：先 <code>kubectl top pods -n tmp</code> 看看它们的资源占用，然后 <code>kubectl delete deployments --all -n tmp</code> 清掉全部 Deployment，最后 <code>kubectl delete pods --all -n tmp</code> 清掉落单的 Pod。',
+    hints: ['kubectl top pods -n tmp', 'kubectl delete deployments --all -n tmp', 'kubectl delete pods --all -n tmp', 'kubectl get pods -n tmp'],
+    setup(e) {
+      e.reset();
+      e.namespaces.push('tmp');
+      e.createDeployment('test1', 'nginx', 2, 'tmp');
+      e.createDeployment('test2', 'redis', 1, 'tmp');
+      e.createPod(null, 'busybox', 'tmp', 'Running', { app: 'scratch' }, 'scratch');
+    },
+    check(e) {
+      return e.used.has('kubectl')
+        && e.deployments.every(d => d.namespace !== 'tmp')
+        && e.pods.every(p => p.namespace !== 'tmp');
+    },
+    done: 'top 看占用、--all 批量清空——干净的命名空间，从一次彻底的大扫除开始。'
+  },
 ];
