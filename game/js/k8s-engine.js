@@ -11,8 +11,12 @@ export class K8sEngine extends LinuxEngine {
     ];
     this.namespaces = ['default', 'kube-system'];
     this.pods = [];         // { name, namespace, status, image, node, ip, restarts, ready, logs: [], owner, labels }
-    this.deployments = [];  // { name, namespace, replicas, image, labels }
+    this.deployments = [];  // { name, namespace, replicas, image, labels, revision, history: [{revision,image,replicas}] }
     this.services = [];     // { name, namespace, type, clusterIp, port, targetPort, selector, labels }
+    this.configmaps = [];   // { name, namespace, data: {} }
+    this.secrets = [];      // { name, namespace, type, data: {} }
+    this.hpas = [];         // { name, namespace, target, min, max, cpu }
+    this.currentContext = 'default-context';
     this._podSeq = 0;
     this._seedCluster();
   }
@@ -70,7 +74,7 @@ export class K8sEngine extends LinuxEngine {
   createDeployment(name, image, replicas = 1, ns = 'default', labels = null) {
     let d = this.findDeployment(name, ns);
     if (!d) {
-      d = { name, namespace: ns, replicas, image, labels: labels ? { app: name, ...labels } : { app: name } };
+      d = { name, namespace: ns, replicas, image, labels: labels ? { app: name, ...labels } : { app: name }, revision: 1, history: [] };
       this.deployments.push(d);
     } else {
       d.replicas = replicas; d.image = image;
@@ -78,6 +82,31 @@ export class K8sEngine extends LinuxEngine {
     }
     this._reconcile(d);
     return d;
+  }
+
+  // 记录一次滚动版本快照并推进 revision（rollout history/undo 用）
+  bumpRevision(d, change = 'update') {
+    d.revision = (d.revision || 1) + 1;
+    d.history = d.history || [];
+    d.history.push({ revision: d.revision, image: d.image, replicas: d.replicas, change });
+    if (d.history.length > 10) d.history.shift();
+    return d.revision;
+  }
+
+  // 合成某命名空间的 Events（kubectl get events 用），确定性输出
+  eventsFor(ns = 'default') {
+    const rows = [];
+    for (const p of this.pods.filter(x => x.namespace === ns)) {
+      const h = this._podSeq + p.name.length;
+      rows.push({ type: 'Normal', reason: 'Scheduled', age: `${(h % 9) + 1}m`, from: 'default-scheduler', obj: `pod/${p.name}`, msg: `Successfully assigned ${ns}/${p.name} to ${p.node}` });
+      rows.push({ type: 'Normal', reason: 'Pulled', age: `${(h % 9) + 1}m`, from: 'kubelet', obj: `pod/${p.name}`, msg: `Container image "${p.image}" already present on machine` });
+      rows.push({ type: 'Normal', reason: 'Created', age: `${(h % 8) + 1}m`, from: 'kubelet', obj: `pod/${p.name}`, msg: 'Created container ' + (p.image.split(':')[0] || 'app') });
+      rows.push({ type: p.status === 'Running' ? 'Normal' : 'Warning', reason: p.status === 'Running' ? 'Started' : 'BackOff', age: `${(h % 7) + 1}m`, from: 'kubelet', obj: `pod/${p.name}`, msg: p.status === 'Running' ? 'Started container' : 'Back-off restarting failed container' });
+    }
+    for (const d of this.deployments.filter(x => x.namespace === ns)) {
+      rows.push({ type: 'Normal', reason: 'ScalingReplicaSet', age: `${(d.name.length % 6) + 2}m`, from: 'deployment-controller', obj: `deployment/${d.name}`, msg: `Scaled up replica set ${d.name} to ${d.replicas}` });
+    }
+    return rows;
   }
 
   // 让 Pod 数量与 Deployment 期望副本数一致

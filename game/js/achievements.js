@@ -214,6 +214,39 @@ export const ACHIEVEMENTS = [
     id: 'remote-commander', icon: '📡', title: '远程指挥官', desc: '通关「远程」阶段全部关卡',
     check: c => stageCleared(c.levelStars, '09 远程'),
   },
+  /* ── 命令全覆盖增强：新增成就 ── */
+  {
+    id: 'tree-climber', icon: '🌳', title: '树形观察员', desc: '用 tree 查看过目录结构',
+    check: c => (c.cmdUsage['tree'] || 0) > 0,
+  },
+  {
+    id: 'port-scanner', icon: '🛰️', title: '端口扫描手', desc: '用 nmap 扫描过主机端口',
+    check: c => (c.cmdUsage['nmap'] || 0) > 0,
+  },
+  {
+    id: 'packet-sniffer', icon: '📶', title: '抓包分析师', desc: '用 tcpdump 抓取过网络数据包',
+    check: c => (c.cmdUsage['tcpdump'] || 0) > 0,
+  },
+  {
+    id: 'bisect-detective', icon: '🔎', title: '二分侦探', desc: '用 git bisect 定位过问题提交',
+    check: c => (c.cmdUsage['git bisect'] || 0) > 0,
+  },
+  {
+    id: 'checkout-adept', icon: '🔄', title: 'checkout 能手', desc: '用 git checkout 切换过分支或恢复文件',
+    check: c => (c.cmdUsage['git checkout'] || 0) > 0,
+  },
+  {
+    id: 'sys-logger', icon: '📝', title: '系统记录员', desc: '用 logger 写入过系统日志',
+    check: c => (c.cmdUsage['logger'] || 0) > 0,
+  },
+  {
+    id: 'archiver', icon: '🗜️', title: '压缩归档师', desc: '用 zip / xz / bzip2 压缩过文件',
+    check: c => (c.cmdUsage['zip'] || 0) > 0 || (c.cmdUsage['xz'] || 0) > 0 || (c.cmdUsage['bzip2'] || 0) > 0,
+  },
+  {
+    id: 'path-tracer', icon: '🛤️', title: '路径追踪者', desc: '用 mtr 或 tracepath 追踪过网络路径',
+    check: c => (c.cmdUsage['mtr'] || 0) > 0 || (c.cmdUsage['tracepath'] || 0) > 0,
+  },
 ];
 
 // 根据当前进度计算已解锁的成就 id 列表

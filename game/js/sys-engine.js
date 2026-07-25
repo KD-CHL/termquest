@@ -43,6 +43,45 @@ export class SysEngine extends LinuxEngine {
     this.mem = { total: 7800, used: 3200, free: 2400, cache: 2200 };
     // 归档：name -> { files: {path: content}, gz: bool }
     this.archives = {};
+    // 组表：name -> { gid }
+    this.groups = {
+      root: { gid: 0 }, user: { gid: 1000 },
+      sudo: { gid: 27 }, wheel: { gid: 10 }, docker: { gid: 999 }, admin: { gid: 1001 },
+    };
+    this.nextGid = 1002;
+    // 登录记录（w / who / last 共用）：{ user, tty, from, login, idle, what }
+    this.loginRecords = [
+      { user: 'user', tty: 'pts/0', from: '10.0.0.2', login: 'Fri Jul 25 09:00', idle: '0.00s', what: 'bash' },
+      { user: 'root', tty: 'pts/1', from: '10.0.0.9', login: 'Fri Jul 25 08:30', idle: '5:12', what: 'top' },
+    ];
+    // lastlog：user -> 描述串
+    this.lastlog = {
+      root: '**Never logged in**',
+      user: 'Fri Jul 25 09:00:00 +0800',
+    };
+    // 内核模块（lsmod / modprobe）：name -> { size, usedBy }
+    this.kernelModules = {
+      ext4: { size: 745472, usedBy: '2' },
+      crc16: { size: 16384, usedBy: '1 ext4' },
+      nvme: { size: 45056, usedBy: '0' },
+      e1000: { size: 135168, usedBy: '0' },
+    };
+    // sysctl 内核参数
+    this.sysctl = {
+      'kernel.hostname': 'termquest',
+      'kernel.ostype': 'Linux',
+      'kernel.osrelease': '6.1.0-termquest',
+      'kernel.pid_max': '4194304',
+      'vm.swappiness': '60',
+      'net.ipv4.ip_forward': '0',
+      'net.core.somaxconn': '4096',
+      'fs.file-max': '9223372036854775807',
+    };
+    // 交换分区状态
+    this.swap = { on: true, total: 2048, used: 0, device: '/dev/sda2' };
+    // at 一次性定时任务
+    this.atJobs = [];
+    this.nextAtJob = 1;
     this._seedSysFiles();
   }
 
@@ -59,4 +98,5 @@ export class SysEngine extends LinuxEngine {
 
   findUser(name) { return this.users.find(u => u.name === name); }
   findService(name) { return this.services[name]; }
+  findGroup(name) { return this.groups[name]; }
 }

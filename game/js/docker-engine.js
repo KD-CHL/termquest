@@ -15,6 +15,7 @@ export class DockerEngine extends LinuxEngine {
     ];
     this.volumes = [];      // { id, name, mountpoint }
     this._idSeq = 0x10;
+    this._tick = 0;       // 确定性时间戳计数器（容器 createdAt 用）
     this.sshHost = null;    // 当前 SSH 会话 'user@host'，null 表示未连接
     this.remote = new LinuxEngine();
     this._seedRemote();
@@ -70,6 +71,15 @@ export class DockerEngine extends LinuxEngine {
       autoRemove: !!opts.autoRemove,  // docker run --rm
       files: {},                      // docker cp 用的容器内文件 {path: content}
       logs: [`Starting ${image.repo}...`, `${image.repo} ready on port 80`, 'INFO listening'],
+      restart: opts.restart || 'no',  // docker run --restart
+      labels: opts.labels || {},      // docker run -l key=value
+      entrypoint: opts.entrypoint || null, // docker run --entrypoint
+      memory: opts.memory || null,    // docker run --memory (e.g. '512m')
+      cpus: opts.cpus || null,        // docker run --cpus (e.g. '1.5')
+      paused: false,                  // docker pause/unpause
+      createdAt: ++this._tick,        // 确定性创建时间戳
+      stdinOpen: !!opts.stdinOpen,    // -i
+      tty: !!opts.tty,               // -t
     };
     this.containers.push(c);
     return c;

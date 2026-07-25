@@ -190,6 +190,18 @@ export class LinuxEngine {
     return { ok: true };
   }
 
+  // 递归改权限（chmod -R）：目录则连同所有后代一起改
+  chmodR(path, modeStr) {
+    const node = this.getNode(this.resolvePath(path));
+    if (!node) return { err: `chmod: 无法访问 '${path}': 没有那个文件或目录` };
+    const rec = n => {
+      n.mode = applyMode(n.mode, modeStr);
+      if (n.type === 'dir') for (const c of Object.values(n.children)) rec(c);
+    };
+    rec(node);
+    return { ok: true };
+  }
+
   chown(path, owner, group) {
     const node = this.getNode(this.resolvePath(path));
     if (!node) return { err: `chown: 无法访问 '${path}': 没有那个文件或目录` };
@@ -213,6 +225,31 @@ export class LinuxEngine {
       return { ok: true };
     }
     pNode.children[name] = { ...sNode };
+    return { ok: true };
+  }
+
+  // 递归复制（cp -r）：源可以是文件或目录，目标是目录则拷入其中
+  copyTree(src, dst) {
+    const sNode = this.follow(src);
+    if (!sNode) return { err: `cp: 无法 stat '${src}': 没有那个文件或目录` };
+    const clone = n => {
+      if (n.type === 'dir') {
+        const d = mkDir(n.mode, n.owner, n.group);
+        for (const [k, v] of Object.entries(n.children)) d.children[k] = clone(v);
+        return d;
+      }
+      if (n.type === 'link') return { type: 'link', mode: n.mode, owner: n.owner, group: n.group, target: n.target };
+      return { ...n };
+    };
+    const dNode = this.follow(dst);
+    if (dNode && dNode.type === 'dir') {
+      const dirNode = this.getNode(this.resolvePath(dst));
+      dirNode.children[this.basename(this.resolvePath(src))] = clone(sNode);
+      return { ok: true };
+    }
+    const { pNode, name } = this.parentOf(dst);
+    if (!pNode || pNode.type !== 'dir') return { err: `cp: 无法创建 '${dst}': 没有那个文件或目录` };
+    pNode.children[name] = clone(sNode);
     return { ok: true };
   }
 

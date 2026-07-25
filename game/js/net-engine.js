@@ -29,12 +29,23 @@ export class NetEngine extends LinuxEngine {
       '10.0.0.5':       { hostname: 'db.internal', up: true, ports: { 5432: 'postgresql', 22: 'ssh' } },
       '192.168.1.99':   { hostname: 'down-server.local', up: false, ports: {} },
     };
-    // 本机网卡
+    // 本机网卡（wlan0 处于 DOWN，用来体现 ifconfig -a / iwconfig 的差异）
     this.interfaces = [
       { name: 'lo', ip: '127.0.0.1', state: 'UP', mac: '00:00:00:00:00:00' },
       { name: 'eth0', ip: '192.168.1.10', state: 'UP', mac: '52:54:00:12:34:56' },
+      { name: 'wlan0', ip: '192.168.1.20', state: 'DOWN', mac: '52:54:00:99:88:77', wireless: true, essid: 'TermQuest-WiFi' },
     ];
     this.localIp = '192.168.1.10';
+    // 本机标识（hostname / hostname -f / hostname -I 用）
+    this.hostname = 'net-host';
+    this.domain = 'localdomain';
+    // 解析器配置（resolvectl / systemd-resolve 用）
+    this.dnsServers = ['8.8.8.8', '1.1.1.1'];
+    this.searchDomains = ['localdomain'];
+    // SSH 会话：sshHost = 'user@host' 表示已进入远程；remote 为远程 LinuxEngine
+    this.sshHost = null;
+    this.remote = new LinuxEngine();
+    this._seedRemote();
     // 路由表
     this.routes = [
       'default via 192.168.1.1 dev eth0',
@@ -75,6 +86,28 @@ export class NetEngine extends LinuxEngine {
   _seedNetFiles() {
     this.mkdir('/home/user/downloads');
     this.writeFile('/home/user/urls.txt', 'http://example.com\nhttps://api.github.com/zen\nhttp://mysite.local/data.json\n');
+  }
+
+  /* ---- 远程主机初始化（ssh / scp / rsync 练习用） ---- */
+  _seedRemote() {
+    const r = this.remote;
+    r.writeFile('/etc/hostname', 'mysite.local\n');
+    r.env.HOSTNAME = 'mysite.local';
+    r.mkdir('/var/log');
+    r.writeFile('/var/log/app.log', 'INFO boot ok\nERROR db connection lost\nINFO retry\nERROR timeout\n');
+    r.writeFile('/home/user/welcome.txt', 'Welcome to mysite.local\n');
+    r.writeFile('/home/user/status.txt', 'all systems operational\n');
+    r.mkdir('/home/user/deploy');
+    r.writeFile('/home/user/deploy/release.txt', 'v1.2.3\n');
+  }
+
+  /* ---- 为主机合成一个确定性的 IPv6 地址（ping6 / AAAA 用） ---- */
+  ipv6For(name) {
+    if (name === 'localhost' || name === '127.0.0.1') return '::1';
+    const ip = this.findHost(name)?.ip || this.resolveDns(name);
+    if (!ip) return null;
+    const parts = ip.split('.').map(n => parseInt(n) || 0);
+    return `2001:db8::${parts[2].toString(16)}${parts[3].toString(16)}`;
   }
 
   /* ---- DNS 解析：域名 -> ip（支持 CNAME 跳转） ---- */
