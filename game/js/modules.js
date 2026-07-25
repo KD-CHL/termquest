@@ -16,6 +16,26 @@ import { DockerEngine } from './docker-engine.js';
 import { dockerExecute } from './docker-commands.js';
 import { dockerRender } from './docker-render.js';
 import { OPS_LEVELS } from './levels-docker.js';
+import { NetEngine } from './net-engine.js';
+import { netExecute } from './net-commands.js';
+import { NET_LEVELS } from './levels-net.js';
+import { textExecute } from './text-commands.js';
+import { TEXT_LEVELS } from './levels-text.js';
+import { SysEngine } from './sys-engine.js';
+import { sysExecute } from './sys-commands.js';
+import { SYS_LEVELS } from './levels-sys.js';
+import { VimEngine } from './vim-engine.js';
+import { vimExecute } from './vim-commands.js';
+import { vimRender } from './vim-render.js';
+import { VIM_LEVELS } from './levels-vim.js';
+import { DbEngine } from './db-engine.js';
+import { dbExecute } from './db-commands.js';
+import { dbRender } from './db-render.js';
+import { DB_LEVELS } from './levels-db.js';
+import { K8sEngine } from './k8s-engine.js';
+import { k8sExecute } from './k8s-commands.js';
+import { k8sRender } from './k8s-render.js';
+import { K8S_LEVELS } from './levels-k8s.js';
 
 // ─── Git 模块描述符 ───
 const gitModule = {
@@ -183,6 +203,228 @@ const opsModule = {
   helpLines: [],
 };
 
+// ─── 网络工具模块描述符 ───
+const netEngine = new NetEngine();
+const netModule = {
+  id: 'net',
+  name: '网络工具',
+  icon: '🌐',
+  color: '#f0883e',
+  desc: 'ping/DNS/curl/端口扫描与网络排障 10 关',
+  engine: netEngine,
+  fs: null,
+  execute: netExecute,
+  render: linuxRender,
+  levels: NET_LEVELS,
+  offset: 0, // registerModule 会设置
+  prompt(engine) {
+    const cwd = (engine.cwd || '~').replace(engine.env?.HOME || '/home/user', '~');
+    return `user@net-host:${cwd}$`;
+  },
+  panels: [
+    { id: 'linuxTree', title: '文件树', dot: 'var(--blue)', grow: true },
+    { id: 'linuxProcs', title: '进程', dot: 'var(--amber)', maxHeight: '170px' },
+  ],
+  sheet: [
+    ['连通性', ['ping 主机', 'ping -c 3 主机', 'traceroute 主机']],
+    ['DNS', ['dig 域名', 'dig MX 域名', 'nslookup 域名', 'host 域名']],
+    ['HTTP', ['curl URL', 'curl -I URL', 'curl -o 文件 URL', 'wget URL']],
+    ['端口/连接', ['nc -zv 主机 端口', 'ss -tuln', 'netstat -an', 'telnet 主机 端口']],
+    ['接口/密钥', ['ip addr', 'ifconfig', 'ip route', 'ssh-keygen']],
+  ],
+  cmds: [
+    'ping ', 'ping -c 3 ', 'traceroute ', 'dig ', 'dig MX ', 'nslookup ', 'host ',
+    'curl ', 'curl -I ', 'curl -o  ', 'wget ', 'nc -zv ', 'ss -tuln', 'netstat -an',
+    'ip addr', 'ifconfig', 'ssh-keygen', 'ls', 'cat ', 'clear', 'help',
+  ],
+  helpLines: [],
+};
+
+// ─── 文本处理模块描述符 ───
+const textEngine = new LinuxEngine();
+const textModule = {
+  id: 'text',
+  name: '文本处理',
+  icon: '✂️',
+  color: '#d29922',
+  desc: 'find/xargs/awk/sed 高级文本流水线 10 关',
+  engine: textEngine,
+  fs: null,
+  execute: textExecute,
+  render: linuxRender,
+  levels: TEXT_LEVELS,
+  offset: 0, // registerModule 会设置
+  prompt(engine) {
+    const cwd = (engine.cwd || '~').replace(engine.env?.HOME || '/home/user', '~');
+    return `user@text:${cwd}$`;
+  },
+  panels: [
+    { id: 'linuxTree', title: '文件树', dot: 'var(--blue)', grow: true },
+    { id: 'linuxProcs', title: '进程', dot: 'var(--amber)', maxHeight: '170px' },
+  ],
+  sheet: [
+    ['查找', ['find . -name "*.txt"', 'find . -type f', 'find . -name "*.log" -exec rm {} \\;', 'find 目录 | xargs 命令']],
+    ['awk', ['awk \'{print $1}\' 文件', 'awk -F , \'{print $2}\'', 'awk \'$2>28\' 文件', 'awk \'{sum+=$2} END{print sum}\'']],
+    ['sed', ['sed \'s/旧/新/g\' 文件', 'sed -i \'2d\' 文件', 'sed -n \'3p\' 文件', 'sed \'/模式/d\' 文件']],
+    ['组合', ['paste a b', 'join a b', 'diff a b', 'comm a b', 'tee 文件', 'column -t', 'rev', 'seq 5']],
+  ],
+  cmds: [
+    'find . -name ""', 'find . -type f', 'find  | xargs ', 'awk \'{print $1}\' ',
+    'awk -F , ', 'sed \'s///g\' ', 'sed -i \'2d\' ', 'sed -n \'3p\' ', 'paste ', 'join ',
+    'diff ', 'tee ', 'column -t', 'seq 5', 'ls', 'cat ', 'clear', 'help',
+  ],
+  helpLines: [],
+};
+
+// ─── 系统管理模块描述符 ───
+const sysEngine = new SysEngine();
+const sysModule = {
+  id: 'sys',
+  name: '系统管理',
+  icon: '🔧',
+  color: '#f778ba',
+  desc: '用户/服务/日志/磁盘/备份/性能 10 关',
+  engine: sysEngine,
+  fs: null,
+  execute: sysExecute,
+  render: linuxRender,
+  levels: SYS_LEVELS,
+  offset: 0, // registerModule 会设置
+  prompt(engine) {
+    const cwd = (engine.cwd || '~').replace(engine.env?.HOME || '/home/user', '~');
+    return `user@server:${cwd}$`;
+  },
+  panels: [
+    { id: 'linuxTree', title: '文件树', dot: 'var(--blue)', grow: true },
+    { id: 'linuxProcs', title: '进程', dot: 'var(--amber)', maxHeight: '170px' },
+  ],
+  sheet: [
+    ['用户', ['useradd 用户', 'passwd 用户', 'id 用户', 'groups', 'sudo 命令', 'su -']],
+    ['服务/日志', ['systemctl start|stop|restart|status 服务', 'systemctl enable 服务', 'systemctl list-units', 'journalctl -u 服务 -p err', 'dmesg']],
+    ['磁盘/挂载', ['df', 'du -sh 目录', 'lsblk', 'mount 设备 挂载点', 'umount 挂载点']],
+    ['备份/压缩', ['tar -czf 包 目录', 'tar -tf 包', 'tar -xzf 包', 'gzip 文件', 'gunzip 文件']],
+    ['定时/性能', ['crontab -l', 'crontab 文件', 'free', 'uptime', 'vmstat', 'lsof']],
+  ],
+  cmds: [
+    'useradd ', 'passwd ', 'id ', 'sudo ', 'systemctl status ', 'systemctl restart ',
+    'systemctl start ', 'systemctl enable ', 'systemctl list-units', 'journalctl -u ',
+    'df', 'du -sh ', 'lsblk', 'mount ', 'tar -czf ', 'tar -tf ', 'crontab -l',
+    'free', 'uptime', 'lsof', 'ls', 'clear', 'help',
+  ],
+  helpLines: [],
+};
+
+// ─── Vim 编辑器模块描述符 ───
+const vimEngine = new VimEngine();
+const vimModule = {
+  id: 'vim',
+  name: 'Vim 编辑器',
+  icon: '⌨️',
+  color: '#7ee787',
+  desc: '模态编辑、删除复制替换 8 关',
+  engine: vimEngine,
+  fs: null,
+  execute: vimExecute,
+  render: vimRender,
+  levels: VIM_LEVELS,
+  offset: 0, // registerModule 会设置
+  prompt(engine) {
+    if (engine.vim) return `-- ${engine.vim.mode === 'insert' ? 'INSERT' : 'NORMAL'} -- ${engine.vim.file}`;
+    const cwd = (engine.cwd || '~').replace(engine.env?.HOME || '/home/user', '~');
+    return `user@vim:${cwd}$`;
+  },
+  panels: [
+    { id: 'vimBox', title: '编辑缓冲区', dot: '#7ee787', grow: true },
+    { id: 'vimTree', title: '文件树', dot: 'var(--blue)', maxHeight: '150px' },
+  ],
+  sheet: [
+    ['模式', ['vim 文件', 'i 插入', 'Esc 回到普通', ':wq 保存退出', ':q! 不保存退出']],
+    ['移动', ['h j k l 方向', '0 行首 / $ 行尾', 'gg 文件头 / G 文件尾', 'w 下一个单词']],
+    ['编辑', ['x 删字符', 'dd 删行', 'cc 改行', 'yy 复制行', 'p 粘贴', 'D 删到行尾']],
+    ['命令', [':w 保存', ':q 退出', ':set number', ':s/旧/新/g', ':%s/旧/新/g', '/模式 搜索']],
+  ],
+  cmds: [
+    'vim ', 'i', 'Esc', ':wq', ':q!', ':w', ':q', 'dd', 'yy', 'p', 'cc', 'x',
+    'gg', 'G', ':set number', ':%s///g', '/搜索', 'ls', 'cat ', 'clear', 'help',
+  ],
+  helpLines: [],
+};
+
+// ─── 数据库模块描述符 ───
+const dbEngine = new DbEngine();
+const dbModule = {
+  id: 'db',
+  name: '数据库',
+  icon: '🗄️',
+  color: '#ff7b72',
+  desc: 'SQLite 增删改查 + Redis 缓存 10 关',
+  engine: dbEngine,
+  fs: null,
+  execute: dbExecute,
+  render: dbRender,
+  levels: DB_LEVELS,
+  offset: 0, // registerModule 会设置
+  prompt(engine) {
+    if (engine.sqlSession) return `sqlite> `;
+    if (engine.redisSession) return `127.0.0.1:6379> `;
+    const cwd = (engine.cwd || '~').replace(engine.env?.HOME || '/home/user', '~');
+    return `user@db-host:${cwd}$`;
+  },
+  panels: [
+    { id: 'dbTables', title: 'SQLite 表', dot: '#ff7b72', grow: true },
+    { id: 'dbRedis', title: 'Redis 键值', dot: 'var(--amber)', maxHeight: '190px' },
+  ],
+  sheet: [
+    ['SQLite', ['sqlite3 库名', 'CREATE TABLE 表 (列 类型, ...)', 'INSERT INTO 表 VALUES (...)', 'SELECT 列|* FROM 表 [WHERE 条件]', 'SELECT COUNT(*)|AVG(列) FROM 表', 'UPDATE 表 SET 列=值 WHERE 条件', 'DELETE FROM 表 WHERE 条件', '.tables / .schema / .quit']],
+    ['Redis 字符串', ['redis-cli', 'SET k v', 'GET k', 'DEL k', 'KEYS *', 'INCR k', 'EXISTS k', 'TYPE k']],
+    ['Redis 结构', ['LPUSH/RPUSH k v', 'LRANGE k 0 -1', 'LLEN k', 'HSET k 字段 值', 'HGET k 字段', 'HGETALL k', 'exit']],
+  ],
+  cmds: [
+    'sqlite3 shop.db', 'CREATE TABLE ', 'INSERT INTO ', 'SELECT * FROM ', 'SELECT COUNT(*) FROM ',
+    'UPDATE ', 'DELETE FROM ', '.tables', '.quit', 'redis-cli', 'SET ', 'GET ', 'DEL ',
+    'KEYS *', 'INCR ', 'LPUSH ', 'LRANGE ', 'HSET ', 'HGETALL ', 'exit', 'ls', 'clear', 'help',
+  ],
+  helpLines: [],
+};
+
+// ─── Kubernetes 模块描述符 ───
+const k8sEngine = new K8sEngine();
+const k8sModule = {
+  id: 'k8s',
+  name: 'Kubernetes',
+  icon: '☸',
+  color: '#79c0ff',
+  desc: 'Deployment/扩缩容/Service/排障 8 关',
+  engine: k8sEngine,
+  fs: null,
+  execute: k8sExecute,
+  render: k8sRender,
+  levels: K8S_LEVELS,
+  offset: 0, // registerModule 会设置
+  prompt(engine) {
+    const cwd = (engine.cwd || '~').replace(engine.env?.HOME || '/home/user', '~');
+    return `user@k8s-master:${cwd}$`;
+  },
+  panels: [
+    { id: 'k8sBox', title: 'Pods', dot: '#79c0ff', grow: true },
+    { id: 'k8sDeploys', title: 'Deployment / Service', dot: 'var(--green)', maxHeight: '170px' },
+    { id: 'k8sNodes', title: '节点', dot: 'var(--amber)', maxHeight: '120px' },
+  ],
+  sheet: [
+    ['查看', ['kubectl get pods|deployments|services|nodes|ns', 'kubectl get all', 'kubectl describe pod 名', 'kubectl logs pod名']],
+    ['部署', ['kubectl create deployment 名 --image=镜像 --replicas=N', 'kubectl apply -f 文件.yaml', 'kubectl delete pod|deployment 名']],
+    ['伸缩/暴露', ['kubectl scale deployment 名 --replicas=N', 'kubectl expose deployment 名 --port=80 --type=NodePort']],
+    ['调试', ['kubectl exec pod名 -- 命令', 'kubectl version', 'kubectl cluster-info']],
+  ],
+  cmds: [
+    'kubectl get pods', 'kubectl get deployments', 'kubectl get services', 'kubectl get nodes',
+    'kubectl get all', 'kubectl describe pod ', 'kubectl logs ', 'kubectl create deployment ',
+    'kubectl scale deployment ', 'kubectl expose deployment ', 'kubectl apply -f ',
+    'kubectl delete pod ', 'kubectl exec ', 'ls', 'cat ', 'echo "" > ', 'clear', 'help',
+  ],
+  helpLines: [],
+};
+
 // ─── 模块注册表 ───
 const MODULES = [gitModule];
 
@@ -202,6 +444,18 @@ registerModule(linuxModule);
 registerModule(shellgitModule);
 // 注册 Docker / SSH / 运维模块
 registerModule(opsModule);
+// 注册网络工具模块
+registerModule(netModule);
+// 注册文本处理模块
+registerModule(textModule);
+// 注册系统管理模块
+registerModule(sysModule);
+// 注册 Vim 编辑器模块
+registerModule(vimModule);
+// 注册数据库模块
+registerModule(dbModule);
+// 注册 Kubernetes 模块
+registerModule(k8sModule);
 
 export function getModules() { return MODULES; }
 export function getModule(id) { return MODULES.find(m => m.id === id); }

@@ -102,6 +102,82 @@ const SOLUTIONS = {
     ['ssh user@prod-server', 'cat /var/log/app.log', 'exit'],
     ['scp backup.sql user@prod-server:/tmp/', 'ssh user@prod-server ls /tmp'],
   ],
+  // ── 网络工具（10 关）──
+  net: [
+    ['ping example.com', 'ping -c 3 mysite.local'],
+    ['ping -c 2 down-server.local', 'traceroute down-server.local'],
+    ['dig example.com', 'dig example.com MX'],
+    ['dig +short api.github.com', 'nslookup mysite.local', 'host db.internal'],
+    ['curl http://example.com', 'curl -I http://example.com'],
+    ['curl https://api.github.com/users/octocat', 'curl -o user.json https://api.github.com/users/octocat', 'cat user.json'],
+    ['wget http://example.com/robots.txt', 'ls', 'cat robots.txt'],
+    ['nc -zv mysite.local 22', 'nc -zv mysite.local 80', 'nc -zv mysite.local 9999'],
+    ['ss -tlnp', 'netstat -an'],
+    ['ssh-keygen -t rsa', 'cat ~/.ssh/id_rsa.pub', 'ip addr', 'curl http://mysite.local/health'],
+  ],
+  // ── 文本处理（10 关）──
+  text: [
+    ['find . -name "*.csv"', 'find . -name "config*"'],
+    ['find . -type f', 'find . -type f | wc -l'],
+    ['ls', 'find . -name "*.tmp" | xargs rm', 'ls'],
+    ['cat people.csv', `awk -F, '$2 > 28 {print $1}' people.csv`],
+    ['cat sales.txt', `awk '{sum+=$2} END {print sum}' sales.txt`],
+    ['cat config.txt', `sed -i '2d' config.txt`, 'cat config.txt'],
+    [`sed -n '3p' poem.txt`, `sed '/two/d' poem.txt`],
+    ['paste names.txt scores.txt', 'join names.txt scores.txt'],
+    ['cat v1.conf', 'cat v2.conf', 'diff v1.conf v2.conf'],
+    ['grep beijing people.csv | wc -l', `awk -F, '{print $3}' people.csv | sort | uniq -c`],
+  ],
+  // ── 系统管理（10 关）──
+  sys: [
+    ['useradd dev', 'passwd dev', 'id dev'],
+    ['sudo systemctl restart nginx', 'systemctl status nginx'],
+    ['systemctl start mysql', 'systemctl enable mysql', 'systemctl list-units'],
+    ['journalctl -u mysql', 'journalctl -u mysql -p err'],
+    ['df', 'du -sh /data', 'du -sh project'],
+    ['lsblk', 'mkdir -p /mnt/backup', 'mount /dev/sdc1 /mnt/backup'],
+    ['tar -czf project.tar.gz project', 'tar -tf project.tar.gz'],
+    ['echo "0 2 * * * /usr/local/bin/backup.sh" > mycron', 'crontab mycron', 'crontab -l'],
+    ['free', 'uptime', 'lsof'],
+    ['useradd deploy', 'tar -czf release.tar.gz project', 'systemctl restart nginx', 'journalctl -u nginx -p err', 'df'],
+  ],
+  // ── Vim 编辑器（8 关）──
+  vim: [
+    ['vim hello.txt', 'i', 'hello vim', 'Esc', ':wq'],
+    ['vim notes.txt', 'j', 'o', 'inserted line', 'Esc', ':wq'],
+    ['vim poem.txt', 'j', 'dd', ':wq'],
+    ['vim config.ini', '3j', 'cc', 'host = 0.0.0.0', 'Esc', ':wq'],
+    ['vim notes.txt', 'yy', 'p', ':wq'],
+    ['vim config.ini', ':%s/8080/9090/g', ':wq'],
+    ['vim poem.txt', '/awesome', 'dd', ':wq'],
+    ['vim config.ini', ':%s/8080/9090/g', '2j', 'dd', 'gg', 'O', '# production config', 'Esc', ':wq'],
+  ],
+  // ── 数据库（10 关）──
+  db: [
+    ['sqlite3 shop.db', 'CREATE TABLE products (id INTEGER, name TEXT, price INTEGER);', '.tables', '.quit'],
+    ['sqlite3 shop.db', "INSERT INTO products VALUES (1, 'apple', 5);", "INSERT INTO products VALUES (2, 'keyboard', 12);", "INSERT INTO products VALUES (3, 'mouse', 8);", 'SELECT * FROM products;'],
+    ['sqlite3 shop.db', 'SELECT name FROM products WHERE price > 10;'],
+    ['sqlite3 shop.db', 'SELECT * FROM products ORDER BY price DESC LIMIT 2;'],
+    ['sqlite3 shop.db', "UPDATE products SET price = 99 WHERE name = 'apple';", 'DELETE FROM products WHERE id = 3;'],
+    ['sqlite3 shop.db', 'SELECT COUNT(*) FROM products;', 'SELECT AVG(price) FROM products;'],
+    ['redis-cli', 'SET greeting hello-world', 'GET greeting', 'KEYS *', 'exit'],
+    ['redis-cli', 'LPUSH queue first', 'RPUSH queue last', 'LRANGE queue 0 -1', 'INCR pageviews', 'INCR pageviews', 'INCR pageviews'],
+    ['redis-cli', 'HSET user:1 name Alice', 'HSET user:1 age 30', 'HGET user:1 name', 'HGETALL user:1'],
+    ['sqlite3 app.db', 'CREATE TABLE logs (id INTEGER, level TEXT, msg TEXT);', "INSERT INTO logs VALUES (1, 'ERROR', 'disk full');", "INSERT INTO logs VALUES (2, 'INFO', 'service started');", "SELECT * FROM logs WHERE level = 'ERROR';", '.quit', 'redis-cli', 'SET deploy_status done'],
+  ],
+  // ── Kubernetes（8 关）──
+  k8s: [
+    ['kubectl get nodes', 'kubectl get pods', 'kubectl get ns'],
+    ['kubectl create deployment web --image=nginx --replicas=3', 'kubectl get pods'],
+    // Pod 名是动态的，从引擎里找 frontend 的 Pod
+    g => { const p = g.pods.find(x => x.owner === 'frontend'); return ['kubectl get pods', `kubectl describe pod ${p.name}`, `kubectl logs ${p.name}`]; },
+    ['kubectl scale deployment web --replicas=5', 'kubectl get pods'],
+    ['kubectl expose deployment frontend --port=80 --type=NodePort', 'kubectl get services'],
+    ['echo "kind: Deployment" > app.yaml', 'echo "name: api" >> app.yaml', 'echo "image: node:18" >> app.yaml', 'echo "replicas: 2" >> app.yaml', 'kubectl apply -f app.yaml'],
+    // 崩溃 Pod 的名字是动态的
+    g => { const bad = g.pods.find(x => x.owner === 'worker'); return ['kubectl get pods', `kubectl logs ${bad.name}`, `kubectl delete pod ${bad.name}`, 'kubectl get pods']; },
+    ['kubectl create deployment shop --image=redis --replicas=2', 'kubectl scale deployment shop --replicas=4', 'kubectl expose deployment shop --port=6379', 'kubectl get all'],
+  ],
 };
 
 let pass = 0, fail = 0, gi = 0;

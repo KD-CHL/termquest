@@ -89,7 +89,7 @@ export function linuxExecute(input, engineOverride) {
 }
 
 /* ============ 单阶段执行 ============ */
-function runStage(stage, stdin, e, direct) {
+export function runStage(stage, stdin, e, direct) {
   const t = tokenize(stage);
   const cmd = t[0];
   const args = t.slice(1);

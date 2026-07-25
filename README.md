@@ -1,6 +1,6 @@
 # TermQuest — 终端闯关练习
 
-一个系统化的命令行练习仓库：既有按难度递进的 Git 专项练习，也有覆盖 Git / Linux / Shell / Docker 的互动闯关游戏。
+一个系统化的命令行练习仓库：既有按难度递进的 Git 专项练习，也有覆盖 Git / Linux / 网络 / 文本 / 系统 / Vim / 数据库 / Kubernetes 等的互动闯关游戏。
 
 ---
 
@@ -8,7 +8,7 @@
 
 **线上体验：https://termquest-chls-projects-ddde4200.vercel.app**
 
-在浏览器里通过**模拟终端**学习命令行——敲真实命令完成 47 个关卡，覆盖 Git、Linux、Shell 脚本与 Docker 运维四大模块。内置用户登录、排行榜、成就徽章、个人统计面板，并支持 GitHub 账号登录。
+在浏览器里通过**模拟终端**学习命令行——敲真实命令完成 103 个关卡，覆盖 Git、Linux、Shell 脚本、Docker 运维、网络工具、文本处理、系统管理、Vim、数据库与 Kubernetes 十大模块。内置用户登录、排行榜、成就徽章、个人统计面板，并支持 GitHub 账号登录。
 
 ### 账号说明
 

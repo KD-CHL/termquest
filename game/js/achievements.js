@@ -123,6 +123,56 @@ export const ACHIEVEMENTS = [
     id: 'polyglot', icon: '🧭', title: '跨界达人', desc: '在每个模块都至少通关 1 关',
     check: c => getModules().every(m => c.levelStars.slice(m.offset, m.offset + m.levels.length).some(s => s > 0)),
   },
+  /* ── 网络工具模块 ── */
+  {
+    id: 'dns-detective', icon: '🔍', title: 'DNS 侦探', desc: '用 dig 查询过域名记录',
+    check: c => (c.cmdUsage['dig'] || 0) > 0,
+  },
+  {
+    id: 'net-navigator', icon: '🌐', title: '网络领航员', desc: '通关网络工具模块全部关卡',
+    check: c => moduleCleared(c.levelStars, 'net'),
+  },
+  /* ── 文本处理模块 ── */
+  {
+    id: 'awk-artisan', icon: '🪚', title: 'awk 工匠', desc: '用 awk 处理过表格数据',
+    check: c => (c.cmdUsage['awk'] || 0) > 0,
+  },
+  {
+    id: 'text-master', icon: '✂️', title: '文本大师', desc: '通关文本处理模块全部关卡',
+    check: c => moduleCleared(c.levelStars, 'text'),
+  },
+  /* ── 系统管理模块 ── */
+  {
+    id: 'log-hunter', icon: '📋', title: '日志猎人', desc: '用 journalctl 排查过服务日志',
+    check: c => (c.cmdUsage['journalctl'] || 0) > 0,
+  },
+  {
+    id: 'sysadmin', icon: '🔧', title: '系统管理员', desc: '通关系统管理模块全部关卡',
+    check: c => moduleCleared(c.levelStars, 'sys'),
+  },
+  /* ── Vim 模块 ── */
+  {
+    id: 'vim-virtuoso', icon: '⌨️', title: 'Vim 大师', desc: '通关 Vim 编辑器模块全部关卡',
+    check: c => moduleCleared(c.levelStars, 'vim'),
+  },
+  /* ── 数据库模块 ── */
+  {
+    id: 'sql-slinger', icon: '🗄️', title: 'SQL 枪手', desc: '进入过 sqlite3 写 SQL',
+    check: c => (c.cmdUsage['sqlite3'] || 0) > 0,
+  },
+  {
+    id: 'db-master', icon: '💾', title: '数据管家', desc: '通关数据库模块全部关卡',
+    check: c => moduleCleared(c.levelStars, 'db'),
+  },
+  /* ── Kubernetes 模块 ── */
+  {
+    id: 'pod-whisperer', icon: '🐳', title: 'Pod 低语者', desc: '用 kubectl 管理过集群',
+    check: c => (c.cmdUsage['kubectl'] || 0) > 0,
+  },
+  {
+    id: 'helmsman', icon: '☸', title: '集群舵手', desc: '通关 Kubernetes 模块全部关卡',
+    check: c => moduleCleared(c.levelStars, 'k8s'),
+  },
 ];
 
 // 根据当前进度计算已解锁的成就 id 列表
