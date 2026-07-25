@@ -1,3 +1,5 @@
 # 运行时数据（用户账号 / 会话），不提交
 data/
 node_modules/
+.vercel
+.env*
